@@ -1,0 +1,27 @@
+[project]
+name = "presidentielle2027-ecologie"
+version = "0.1.0"
+description = "Extraction des tweets des candidats à la présidentielle 2027 et classification écologie avec Claude"
+requires-python = ">=3.10"
+dependencies = [
+    "anthropic>=1.14.0",
+    "requests>=2.31",
+    "pandas>=2.2",
+    "pydantic>=2.6",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

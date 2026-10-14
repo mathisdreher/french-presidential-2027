@@ -1,0 +1,21 @@
+# Secrets
+.env
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.venv/
+venv/
+
+# Données générées (sauf échantillon)
+data/raw/*
+data/classified/*
+data/reports/*
+data/state/*
+!data/raw/.gitkeep
+!data/classified/.gitkeep
+!data/reports/.gitkeep
+!data/state/.gitkeep

@@ -1,0 +1,107 @@
+# Candidats à l'élection présidentielle 2027 (1er tour : 18 avril 2027) et leurs comptes X.
+#
+# status  : declare   -> candidature annoncée publiquement
+#           designe   -> investi par son parti / primaire
+#           pressenti -> non déclaré mais suivi (désactivé par défaut)
+# enabled : false -> ignoré par le pipeline
+#
+# Liste établie mi-octobre 2026 (sources : France 24, Public Sénat, Touteleurope).
+# Les handles X sont à vérifier avant un premier run : le pipeline s'arrête avec
+# un message explicite si un handle n'existe pas.
+
+candidates:
+  # --- Droite, centre, extrême droite ---
+  - name: Marine Le Pen
+    party: Rassemblement national
+    handle: MLP_officiel
+    status: declare
+  - name: Jordan Bardella
+    party: Rassemblement national
+    handle: J_Bardella
+    status: pressenti
+    enabled: false
+  - name: Édouard Philippe
+    party: Horizons
+    handle: EPhilippePM
+    status: declare
+  - name: Bruno Retailleau
+    party: Les Républicains
+    handle: BrunoRetailleau
+    status: designe
+  - name: Gabriel Attal
+    party: Renaissance
+    handle: GabrielAttal
+    status: declare
+  - name: David Lisnard
+    party: Nouvelle Énergie
+    handle: dlisnard
+    status: declare
+  - name: Éric Zemmour
+    party: Reconquête
+    handle: ZemmourEric
+    status: declare
+  - name: Olivier Becht
+    party: Renaissance (dissident)
+    handle: olivierbecht
+    status: declare
+  - name: Nicolas Dupont-Aignan
+    party: Debout la France
+    handle: dupontaignan
+    status: declare
+  - name: Florian Philippot
+    party: Les Patriotes
+    handle: f_philippot
+    status: declare
+  - name: François Asselineau
+    party: UPR
+    handle: UPR_Asselineau
+    status: declare
+  - name: Dominique de Villepin
+    party: La France humaniste
+    handle: Villepin
+    status: pressenti
+    enabled: false
+
+  # --- Gauche, écologistes, extrême gauche ---
+  - name: Raphaël Glucksmann
+    party: Place publique / PS
+    handle: rglucks1
+    status: designe
+  - name: Jean-Luc Mélenchon
+    party: La France insoumise
+    handle: JLMelenchon
+    status: declare
+  - name: Karim Bouamrane
+    party: Parti socialiste
+    handle: KBouamrane
+    status: declare
+  - name: Delphine Batho
+    party: Écologistes
+    handle: delphinebatho
+    status: declare
+  - name: Fabien Roussel
+    party: PCF
+    handle: Fabien_Roussel
+    status: declare
+  - name: François Ruffin
+    party: Debout !
+    handle: Francois_Ruffin
+    status: declare
+  - name: Bernard Cazeneuve
+    party: La Convention
+    handle: BCazeneuve
+    status: declare
+  - name: Nathalie Arthaud
+    party: Lutte ouvrière
+    handle: n_arthaud
+    status: declare
+  - name: Anasse Kazib
+    party: Révolution permanente
+    handle: AnasseKazib
+    status: declare
+
+  # --- Autres ---
+  - name: Natacha Polony
+    party: Sans étiquette
+    handle: NPolony
+    status: declare
