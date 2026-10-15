@@ -19,10 +19,6 @@ permissions:
   pages: write
   id-token: write
 
-concurrency:
-  group: pipeline
-  cancel-in-progress: false
-
 jobs:
   controle:
     runs-on: ubuntu-latest
@@ -48,6 +44,11 @@ jobs:
   collecte:
     needs: controle
     if: needs.controle.outputs.faire == 'oui'
+    # file d'attente au niveau du job : un rattrapage qui ne collecte pas n'occupe pas la file
+    # et n'annule donc pas un autre run en attente (publication du site, codage Claude)
+    concurrency:
+      group: pipeline
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
