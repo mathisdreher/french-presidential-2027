@@ -1486,7 +1486,8 @@ function renderMots(panel) {
       })));
     fBox.append(el("div", { class: "table-view" }, table));
     const rows = [...S.cands].map((c) => ({ key: c.key, label: c.name, values: Object.fromEntries(used.map((f) => [f.key, f.par_candidat[c.key] || 0])) }))
-      .filter((r) => Object.values(r.values).some((v) => v > 0)).sort((a, b) => byBloc(a.key, b.key));
+      // tous les candidats collectés, y compris ceux qui n'emploient aucune formule : l'absence est une information
+      .filter((r) => S.tweets.some((tw) => tw.c === r.key)).sort((a, b) => byBloc(a.key, b.key));
     const heat = el("div", { class: "heat-gap" });
     fBox.append(heat);
     renderHeat(heat, "formules", rows, used.map((f) => ({ key: f.key, label: LANG === "en" && f.en ? f.en : f.label.replace(/[«»]/g, "").trim(), title: f.label })), { format: (v) => num(v), min0: "0", unit: t("uses") });
