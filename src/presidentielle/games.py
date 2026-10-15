@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from . import config
 from .storage import append_jsonl, read_jsonl
@@ -115,7 +115,7 @@ def claude_rewrite(tweets: list[dict], *, model: Optional[str] = None, limit: Op
 
     def call(t: dict):
         return client.messages.parse(
-            model=model, max_tokens=2048,
+            model=model, max_tokens=8192,
             system=[{"type": "text", "text": GAMES_PROMPT, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": f"Tweet (pré-anonymisé automatiquement) :\n\"\"\"\n{anonymize(t['text'], candidates)}\n\"\"\""}],
             output_format=GameRewrite, output_config={"effort": "low"},
@@ -134,6 +134,9 @@ def claude_rewrite(tweets: list[dict], *, model: Optional[str] = None, limit: Op
                 raise  # erreur de configuration (clé, espace de travail) : inutile de continuer tweet par tweet
             except anthropic.APIError as e:
                 log.error("[Jeux] %s : %s", t["id"], e)
+                continue
+            except ValidationError as e:  # réponse tronquée ou mal formée : on passe ce tweet, il sera repris au prochain run
+                log.error("[Jeux] %s : réponse illisible (%s)", t["id"], e.errors()[0].get("msg"))
                 continue
             if resp.stop_reason != "end_turn" or resp.parsed_output is None:
                 log.error("[Jeux] %s : stop_reason=%s", t["id"], resp.stop_reason)
