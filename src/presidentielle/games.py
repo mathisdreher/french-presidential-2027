@@ -108,7 +108,7 @@ def claude_rewrite(tweets: list[dict], *, model: Optional[str] = None, limit: Op
         log.info("Jeux : aucun tweet à préparer.")
         return 0
     model = model or config.claude_model()
-    client = anthropic.Anthropic(max_retries=4)
+    client = config.anthropic_client(max_retries=4)
     candidates = config.load_candidates(only_enabled=False)
     n = 0
     for t in todo:
@@ -119,6 +119,8 @@ def claude_rewrite(tweets: list[dict], *, model: Optional[str] = None, limit: Op
                 messages=[{"role": "user", "content": f"Tweet (pré-anonymisé automatiquement) :\n\"\"\"\n{anonymize(t['text'], candidates)}\n\"\"\""}],
                 output_format=GameRewrite, output_config={"effort": "low"},
             )
+        except (anthropic.AuthenticationError, anthropic.PermissionDeniedError, anthropic.BadRequestError):
+            raise  # erreur de configuration (clé, espace de travail) : inutile de continuer tweet par tweet
         except anthropic.APIError as e:
             log.error("[Jeux] %s : %s", t["id"], e)
             continue

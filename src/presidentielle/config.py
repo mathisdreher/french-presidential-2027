@@ -125,3 +125,13 @@ def ensure_dirs() -> None:
     for p in (RAW_TWEETS_FILE, CLASSIFICATIONS_FILE, GAMES_FILE, VALIDATION_FILE, USERS_STATE_FILE):
         p.parent.mkdir(parents=True, exist_ok=True)
     EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def anthropic_client(**kwargs):
+    """Client Claude. Une clé non rattachée à un espace de travail exige ANTHROPIC_WORKSPACE_ID."""
+    import anthropic
+
+    workspace = os.environ.get("ANTHROPIC_WORKSPACE_ID", "").strip()
+    if workspace:
+        kwargs["default_headers"] = {**kwargs.get("default_headers", {}), "anthropic-workspace-id": workspace}
+    return anthropic.Anthropic(**kwargs)

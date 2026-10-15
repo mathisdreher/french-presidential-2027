@@ -73,6 +73,7 @@ jobs:
       - name: Codage Claude
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID || vars.ANTHROPIC_WORKSPACE_ID }}
           CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
           PORTEE: ${{ inputs.portee }}
           TAILLE: ${{ inputs.taille_echantillon }}

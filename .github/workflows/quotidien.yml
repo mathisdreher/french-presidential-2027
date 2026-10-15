@@ -55,6 +55,7 @@ jobs:
           X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID || vars.ANTHROPIC_WORKSPACE_ID }}
           JEV_MODEL: ${{ vars.JEV_MODEL }}
           CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
         run: python -m presidentielle daily --out _site

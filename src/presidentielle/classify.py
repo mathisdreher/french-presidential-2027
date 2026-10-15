@@ -295,7 +295,7 @@ def classify_claude_sync(tweets: list[dict], *, model: Optional[str] = None, wor
         log.info("Aucun tweet à classifier (Claude).")
         return 0
     model = model or config.claude_model()
-    client = anthropic.Anthropic(max_retries=4)
+    client = config.anthropic_client(max_retries=4)
     rows = load_rows()
     done, errors, updated = 0, 0, []
     with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -346,7 +346,7 @@ def submit_batch(tweets: list[dict], *, model: Optional[str] = None) -> Optional
         log.info("Aucun tweet à classifier (Claude batch).")
         return None
     model = model or config.claude_model()
-    client = anthropic.Anthropic()
+    client = config.anthropic_client()
     batch = client.messages.batches.create(requests=[_batch_request(t, model) for t in tweets])
     state = load_json(config.BATCHES_STATE_FILE, {})
     state[batch.id] = {"created_at": _now(), "model": model, "count": len(tweets),
@@ -357,7 +357,7 @@ def submit_batch(tweets: list[dict], *, model: Optional[str] = None) -> Optional
 
 
 def wait_batch(batch_id: str, *, poll_seconds: int = 60, timeout_minutes: Optional[int] = None) -> bool:
-    client = anthropic.Anthropic()
+    client = config.anthropic_client()
     started = time.time()
     while True:
         batch = client.messages.batches.retrieve(batch_id)
@@ -373,7 +373,7 @@ def wait_batch(batch_id: str, *, poll_seconds: int = 60, timeout_minutes: Option
 
 
 def collect_batch(batch_id: str) -> int:
-    client = anthropic.Anthropic()
+    client = config.anthropic_client()
     state = load_json(config.BATCHES_STATE_FILE, {})
     meta = state.get(batch_id)
     if not meta:
@@ -414,7 +414,7 @@ def collect_pending(*, wait: bool = False) -> int:
     pending = [bid for bid, meta in state.items() if not meta.get("collected")]
     if not pending:
         return 0
-    client = anthropic.Anthropic()
+    client = config.anthropic_client()
     n = 0
     for bid in pending:
         status = client.messages.batches.retrieve(bid).processing_status
