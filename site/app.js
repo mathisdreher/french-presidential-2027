@@ -147,7 +147,7 @@ const S = {
   apercuHeat: "themes", discours: "carre", discoursVar: {}, discoursScope: "ecologie", selectedCell: null,
   salMode: "part", evoMode: "ensemble", netMode: "formules", netScope: "tous", engBase: new Map(),
   x: { ...X_DEFAULT }, mots: { who: "", mode: "candidats" },
-  tables: new Map(), openTables: new Set(), openChips: new Set(),
+  tables: new Map(), openTables: new Set(), openChips: new Set(), showOriginal: new Set(),
   play: null, filtersOpen: false, langInUrl: false, scrollTo: null, focusTo: null,
 };
 
@@ -172,7 +172,7 @@ function decode(data) {
       else tw[v.key] = (v.options[raw] || {}).key || null;
     }
     const tx = data.texts[tw.i];
-    if (tx) Object.assign(tw, { t: tx.t, rs: tx.rs, lx: tx.lx, im: tx.im, cf: tx.cf });
+    if (tx) Object.assign(tw, { t: tx.t, rs: tx.rs, lx: tx.lx, im: tx.im, cf: tx.cf, te: tx.te, re: tx.re, ie: tx.ie });
     return tw;
   });
   // Habitude de chaque candidat : médiane des interactions de ses tweets mesurés à 48 h, sur toute l'étude
@@ -950,7 +950,7 @@ function examplesFor(row, col, variable) {
   const box = el("div", { class: "examples", id: "examples" }, el("h3", { text: `${candName(row)} · ${V(variable).kind === "noul" ? varLabel(variable) : optLabel(variable, col)}` }));
   const def = optDef(variable, col);
   if (def) box.append(el("p", { class: "note-small", text: def }));
-  if (LANG === "en") box.append(el("p", { class: "note-small", text: t("tweets_fr_note") }));
+  if (LANG === "en" && list.some((tw) => !tw.te)) box.append(el("p", { class: "note-small", text: t("tweets_fr_note") }));
   if (!list.length) box.append(el("p", { class: "empty", text: t("examples_empty") }));
   box.append(el("ol", { class: "tweet-list" }, list.map(tweetItem)));
   return box;
@@ -1571,14 +1571,24 @@ function tweetItem(tw) {
         onclick: () => { if (open) S.openChips.delete(tw.i); else S.openChips.add(tw.i); draw(); chips.querySelector(".chip-more").focus(); } }) : null);
   };
   draw();
-  const foot = [t("coded_by", { engine: tw.s === "c" ? "Claude" : "Jev" }), tw.p !== null && tw.p !== undefined ? t("p_eco", { p: f2(tw.p) }) : null, tw.im ? t("presupposed", { x: tw.im }) : null].filter(Boolean).join(" · ");
-  return el("li", { class: "tweet" },
+  // Version anglaise : traduction automatique si elle existe, original en français à un clic
+  const translated = LANG === "en" && !!tw.te, orig = translated && S.showOriginal.has(tw.i);
+  const en = translated && !orig, im = en && tw.ie ? tw.ie : tw.im;
+  const foot = [t("coded_by", { engine: tw.s === "c" ? "Claude" : "Jev" }), tw.p !== null && tw.p !== undefined ? t("p_eco", { p: f2(tw.p) }) : null, im ? t("presupposed", { x: im }) : null].filter(Boolean).join(" · ");
+  const li = el("li", { class: "tweet" });
+  const toggle = translated ? el("button", { class: "tr-toggle", type: "button", "aria-pressed": String(orig),
+    text: orig ? t("tr_show_translation") : t("tr_show_original"),
+    onclick: () => { if (orig) S.showOriginal.delete(tw.i); else S.showOriginal.add(tw.i); const next = tweetItem(tw); li.replaceWith(next); next.querySelector(".tr-toggle").focus(); } }) : null;
+  li.append(
     el("div", { class: "tweet-head" }, avatar(tw.c, 28), el("strong", { text: c.name }), el("span", { text: fmtDay(tw.d) }),
-      LANG === "en" ? el("span", { class: "lang-tag", title: t("in_french"), text: "FR" }) : null,
+      LANG === "en" && !en ? el("span", { class: "lang-tag", title: t("in_french"), text: "FR" }) : null,
       c.handle ? el("a", { href: `https://x.com/${c.handle}/status/${tw.i}`, target: "_blank", rel: "noopener", text: t("see_on_x") }) : null),
-    el("p", { class: "tweet-text", lang: "fr", text: tw.t || "" }), tw.rs ? el("p", { class: "tweet-resume", lang: "fr", text: tw.rs }) : null, chips,
+    el("p", { class: "tweet-text", lang: en ? "en" : "fr", text: (en ? tw.te : tw.t) || "" }),
+    translated ? el("p", { class: "tr-note" }, el("span", { text: en ? t("tr_machine") : t("tr_original") }), " · ", toggle) : null,
+    (en && tw.re) || tw.rs ? el("p", { class: "tweet-resume", lang: en && tw.re ? "en" : "fr", text: en && tw.re ? tw.re : tw.rs }) : null, chips,
     engagementRow(tw),
     el("div", { class: "tweet-foot" }, confidenceBadge(tw), el("span", { text: foot })));
+  return li;
 }
 function renderTweets(panel) {
   const x = S.x;
@@ -1599,13 +1609,13 @@ function renderTweets(panel) {
   const list = el("ol", { class: "tweet-list" });
   const more = el("button", { class: "ghost-btn", type: "button", text: t("show_more") });
   const sub = el("p", { class: "sub", role: "status" });
-  panel.replaceChildren(sectionIntro(t("tweets_title"), t("tweets_intro"), LANG === "en" ? el("p", { class: "note-small", text: t("tweets_fr_note") }) : null),
+  panel.replaceChildren(sectionIntro(t("tweets_title"), t("tweets_intro"), LANG === "en" ? el("p", { class: "note-small", text: t(S.tweets.some((tw) => tw.te) ? "tweets_tr_note" : "tweets_fr_note") }) : null),
     el("section", { class: "card" }, fields, sub, list, el("div", { class: "btn-row" }, more)));
   const update = () => {
     let items = filtered().filter((tw) => tw.e && tw.t && (!x.cand || tw.c === x.cand) && (!x.theme || tw.themes.includes(x.theme)) && (!x.pos || tw.position === x.pos) && (!x.cad || tw.cadrage === x.cad));
     if (x.concept) { const [vk, ok] = x.concept.split(":"); items = items.filter((tw) => (Array.isArray(tw[vk]) ? tw[vk].includes(ok) : tw[vk] === ok)); }
     if (x.conf !== "") items = items.filter((tw) => String(tw.cj) === x.conf);
-    if (x.q) { const n = x.q.toLowerCase(); items = items.filter((tw) => (tw.t || "").toLowerCase().includes(n) || (tw.rs || "").toLowerCase().includes(n)); }
+    if (x.q) { const n = x.q.toLowerCase(); items = items.filter((tw) => [tw.t, tw.rs, tw.te, tw.re].some((s) => (s || "").toLowerCase().includes(n))); }
     const byDate = (a, b) => (a.d < b.d ? 1 : a.d > b.d ? -1 : 0);
     const sorters = { likes: (a, b) => b.l - a.l, rel: (a, b) => (relEng(b) ?? -1) - (relEng(a) ?? -1) || byDate(a, b),
       conf: (a, b) => (a.cj ?? 3) - (b.cj ?? 3) || (Math.abs((a.p ?? 1) - 0.5) - Math.abs((b.p ?? 1) - 0.5)) };

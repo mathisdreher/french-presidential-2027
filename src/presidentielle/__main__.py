@@ -56,6 +56,9 @@ def build_parser() -> argparse.ArgumentParser:
     g = sub.add_parser("games", help="Préparer les tweets des jeux avec Claude (anonymisation fine et indices)")
     g.add_argument("--limit", type=int)
     g.add_argument("--model")
+    tr = sub.add_parser("translate", help="Traduire en anglais avec Claude les tweets affichés par le site")
+    tr.add_argument("--limit", type=int)
+    tr.add_argument("--model")
 
     sub.add_parser("photos", help="Rafraîchir les photos des candidats (Wikipédia et Commons)")
     sub.add_parser("validate", help="Accord Jev / Claude")
@@ -147,10 +150,19 @@ def main(argv=None) -> int:
                 classify_mod.collect_pending()
             except Exception as e:  # noqa: BLE001 - la récupération Claude ne doit pas bloquer la tâche quotidienne
                 logging.getLogger(__name__).warning("Récupération des lots Claude impossible : %s", e)
+            try:
+                from . import traduction
+                traduction.run(limit=traduction.DAILY_LIMIT)
+            except Exception as e:  # noqa: BLE001 - une traduction ratée ne doit pas bloquer la tâche quotidienne
+                logging.getLogger(__name__).warning("Traduction des tweets impossible : %s", e)
         _publish(args.out)
         return 0
     if args.cmd == "classify":
         _classify(args)
+        return 0
+    if args.cmd == "translate":
+        from . import traduction
+        traduction.run(model=args.model, limit=args.limit)
         return 0
     if args.cmd == "games":
         from . import games

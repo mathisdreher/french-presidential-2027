@@ -12,6 +12,7 @@ on:
           - incertains
           - echantillon
           - jeux
+          - traduction
           - tous
         default: ecologie_et_incertains
       taille_echantillon:
@@ -19,7 +20,7 @@ on:
         type: number
         default: 300
       mode:
-        description: "batch : moitié prix, résultats en général sous 1 h ; sync : immédiat (la portée « jeux » est toujours immédiate)"
+        description: "batch : moitié prix, résultats en général sous 1 h ; sync : immédiat (les portées « jeux » et « traduction » sont toujours immédiates)"
         type: choice
         options:
           - batch
@@ -83,6 +84,8 @@ jobs:
           limit=(); if [ -n "$LIMITE" ]; then limit=(--limit "$LIMITE"); fi
           if [ "$PORTEE" = "jeux" ]; then
             python -m presidentielle games "${limit[@]}"
+          elif [ "$PORTEE" = "traduction" ]; then
+            python -m presidentielle translate "${limit[@]}"
           else
             python -m presidentielle classify --engine claude --scope "$PORTEE" --sample-size "$TAILLE" --mode "$MODE" --timeout-minutes 240 "${limit[@]}"
           fi

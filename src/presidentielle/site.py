@@ -19,7 +19,7 @@ from typing import Optional
 
 from . import codebook as cb
 from . import codebook_en as en
-from . import config, games, lexique, photos, reseau
+from . import config, games, lexique, photos, reseau, traduction
 from .fetch import account_status, age_at_fetch
 from .jev_client import level, tweet_level
 from .storage import load_json, read_jsonl
@@ -131,7 +131,7 @@ def payload(raw_path: Path | None = None, cls_path: Path | None = None, validati
     def used(text: str) -> list[int] | None:
         folded = lexique.fold(text or "")
         return [i for i, f in enumerate(formules) if f["regex"].search(folded)] or None
-    out_rows, texts, last_day, eco_ids, refreshed = [], {}, {}, set(), {}
+    out_rows, texts, last_day, eco_ids, refreshed, sources = [], {}, {}, set(), {}, {}
     for t in raw:
         slug = t["handle"].lower()
         day = (t.get("created_at") or "")[:10]
@@ -160,7 +160,11 @@ def payload(raw_path: Path | None = None, cls_path: Path | None = None, validati
             eco_ids.add(t["id"])
             texts[t["id"]] = {k: v for k, v in (("t", t.get("text", "")), ("rs", r.get("resume")), ("lx", r.get("lexique")),
                                                  ("im", r.get("implicites")), ("cf", _confidence(r.get("jev"), eco))) if v}
+            sources[t["id"]] = {"text": t.get("text", ""), "resume": r.get("resume"), "implicites": r.get("implicites")}
     out_rows.sort(key=lambda x: x[2])
+    # traductions anglaises encore valides : te (texte), re (résumé), ie (présupposés)
+    for i, tr in traduction.current(sources).items():
+        texts[i].update({k2: tr[k1] for k1, k2 in (("t", "te"), ("rs", "re"), ("im", "ie")) if tr.get(k1)})
 
     generated = datetime.now(timezone.utc)
     cand_out = []

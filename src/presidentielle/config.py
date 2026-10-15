@@ -28,6 +28,7 @@ RAW_TWEETS_FILE = DATA_DIR / "raw" / "tweets.jsonl"
 METRICS_FILE = DATA_DIR / "raw" / "metrics.json"          # mesures d'engagement à 48 h et réactualisations
 CLASSIFICATIONS_FILE = DATA_DIR / "classified" / "classifications.jsonl"
 GAMES_FILE = DATA_DIR / "games" / "anonymized.jsonl"
+TRANSLATIONS_FILE = DATA_DIR / "translations" / "tweets_en.jsonl"  # traductions anglaises des tweets affichés
 EXPORTS_DIR = DATA_DIR / "exports"
 REPORTS_DIR = DATA_DIR / "reports"
 VALIDATION_FILE = REPORTS_DIR / "validation.json"
@@ -124,7 +125,7 @@ def claude_model() -> str:
 
 
 def ensure_dirs() -> None:
-    for p in (RAW_TWEETS_FILE, CLASSIFICATIONS_FILE, GAMES_FILE, VALIDATION_FILE, USERS_STATE_FILE):
+    for p in (RAW_TWEETS_FILE, CLASSIFICATIONS_FILE, GAMES_FILE, TRANSLATIONS_FILE, VALIDATION_FILE, USERS_STATE_FILE):
         p.parent.mkdir(parents=True, exist_ok=True)
     EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
