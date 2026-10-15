@@ -616,6 +616,110 @@ function renderEvolution(box, legend, tweets) {
     full.map((w) => { const b = band.get(w); return [fmtDay(w), ...series.flatMap((s) => { const v = s.data.get(w); return v ? [num(v.n), pct(v.eco / v.n)] : ["0", "–"]; }),
       b ? `${pct(b.lo, 0)} – ${pct(b.hi, 0)}` : "–"]; }));
 }
+// Positions dans le temps : position face à l'écologie, volume de tweets et réaction du public, semaine par
+// semaine, pour l'ensemble, une famille ou un candidat (filtres du haut de page)
+const PT_MIN = 3; // tweets écologie dans la semaine pour une répartition des positions lisible
+function renderPositionTime(box, legend, tweets) {
+  box.replaceChildren();
+  const subj = S.focus ? tweets.filter((tw) => tw.c === S.focus) : tweets;
+  const name = S.focus ? candName(S.focus) : S.bloc ? blocLabel(S.bloc) : t("series_all");
+  if (!subj.some((tw) => tw.e)) { legend.replaceChildren(); box.append(el("p", { class: "empty", text: t("empty_eco_period") })); setTable("position-temps", [], []); return; }
+  const weeks = new Map();
+  for (const tw of subj) {
+    const w = weekStart(tw.d), s = weeks.get(w) || { n: 0, eco: 0, fav: 0, neu: 0, cri: 0, rel: [] };
+    s.n++;
+    if (tw.e) {
+      s.eco++;
+      if (tw.position === "favorable_transition") s.fav++; else if (tw.position === "critique_ecologie") s.cri++; else s.neu++;
+      const r = relEng(tw); if (r !== null) s.rel.push(r);
+    }
+    weeks.set(w, s);
+  }
+  const full = weekRange([...weeks.keys()].sort());
+  const STANCES = [["fav", "favorable_transition", t("th_favorable")], ["neu", "neutre", t("th_neutral")], ["cri", "critique_ecologie", t("th_critical")]];
+  legend.replaceChildren(el("span", { class: "legend-title", text: name }),
+    ...STANCES.map(([, k, label]) => el("span", { class: "key" }, el("span", { class: "swatch", style: `background:${POS_COLOR[k]}` }), label)),
+    el("span", { class: "key" }, el("span", { class: "linekey", style: "background:var(--ink-2)" }), t("pt_reaction")));
+  // trois bandes alignées : positions (100 %), volume, réaction (échelle logarithmique autour de ×1)
+  const W = Math.max(320, box.clientWidth || 640), m = { t: 26, r: 16, b: 26, l: 52 }, P1 = 150, P2 = 64, P3 = 104, GAP = 26;
+  const H = m.t + P1 + GAP + P2 + GAP + P3 + m.b, iw = W - m.l - m.r;
+  const y1 = m.t, y2 = y1 + P1 + GAP, y3 = y2 + P2 + GAP;
+  const x = (i) => m.l + (full.length === 1 ? iw / 2 : (i / (full.length - 1)) * iw);
+  const bw = Math.max(3, Math.min(22, (iw / full.length) * 0.72));
+  const root = svg("svg", { class: "line-chart pt-chart", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": t("pt_aria", { name }) });
+  const label = (txt, yy) => { const tx = svg("text", { class: "pt-panel", x: m.l, y: yy - 9 }); tx.textContent = txt; root.append(tx); };
+  const axis = (txt, yy) => { const tx = svg("text", { class: "axis-text", x: m.l - 8, y: yy + 4, "text-anchor": "end" }); tx.textContent = txt; root.append(tx); };
+  // 1. positions
+  label(t("pt_panel_stance"), y1);
+  for (const v of [0, 0.5, 1]) { root.append(svg("line", { class: v === 0 ? "base-line" : "grid-line", x1: m.l, x2: W - m.r, y1: y1 + P1 - v * P1, y2: y1 + P1 - v * P1 })); axis(pct(v, 0), y1 + P1 - v * P1); }
+  full.forEach((w, i) => {
+    const s = weeks.get(w); if (!s || !s.eco) return;
+    let acc = 0;
+    for (const [f, k] of STANCES) {
+      const h = (s[f] / s.eco) * P1; if (!h) continue;
+      root.append(svg("rect", { x: x(i) - bw / 2, y: y1 + P1 - acc - h, width: bw, height: h, style: `fill:${POS_COLOR[k]}`, opacity: s.eco >= PT_MIN ? 1 : 0.35 }));
+      acc += h;
+    }
+  });
+  // 2. volume : tous les tweets, la part écologie en couleur
+  label(t("pt_panel_volume"), y2);
+  const vmax = Math.max(...full.map((w) => (weeks.get(w) || { n: 0 }).n), 1);
+  root.append(svg("line", { class: "base-line", x1: m.l, x2: W - m.r, y1: y2 + P2, y2: y2 + P2 }));
+  axis(num(vmax), y2); axis("0", y2 + P2);
+  full.forEach((w, i) => {
+    const s = weeks.get(w); if (!s) return;
+    const hA = (s.n / vmax) * P2, hE = (s.eco / vmax) * P2;
+    root.append(svg("rect", { class: "vol-all", x: x(i) - bw / 2, y: y2 + P2 - hA, width: bw, height: hA, rx: 1.5 }),
+      svg("rect", { class: "vol-eco", x: x(i) - bw / 2, y: y2 + P2 - hE, width: bw, height: hE, rx: 1.5 }));
+  });
+  // 3. réaction : engagement relatif médian des tweets écologie (×1 = l'habitude du candidat)
+  label(t("pt_panel_reaction"), y3);
+  const LMAX = 3; // de ×1/8 à ×8
+  const ry = (v) => y3 + P3 / 2 - (Math.max(-LMAX, Math.min(LMAX, Math.log2(v))) / LMAX) * (P3 / 2);
+  for (const v of [0.25, 1, 4]) { root.append(svg("line", { class: v === 1 ? "pt-one" : "grid-line", x1: m.l, x2: W - m.r, y1: ry(v), y2: ry(v) })); axis(times(v), ry(v)); }
+  let d = "", pen = false;
+  full.forEach((w, i) => {
+    const s = weeks.get(w);
+    if (!s || s.rel.length < 2) { pen = false; return; }
+    const v = median(s.rel), px = x(i), py = ry(v);
+    d += (pen ? "L" : "M") + px.toFixed(1) + "," + py.toFixed(1); pen = true;
+    root.append(svg("circle", { cx: px, cy: py, r: 3.2, class: "pt-dot" }));
+  });
+  root.append(svg("path", { class: "series pt-line", d }));
+  // axe du temps et événements, sur les trois bandes
+  const every = Math.max(1, Math.ceil(full.length / Math.floor(iw / 70)));
+  full.forEach((w, i) => { if (i % every) return; const tx = svg("text", { class: "axis-text", x: x(i), y: H - 6, "text-anchor": "middle" }); tx.textContent = fmtShort(w); root.append(tx); });
+  let lastX = -1e9;
+  for (const ev of S.data.study.events || []) {
+    const i = full.indexOf(weekStart(ev.date)); if (i < 0) continue;
+    const ex = x(i);
+    root.append(svg("line", { class: "event-line", x1: ex, x2: ex, y1: y1 - 4, y2: y3 + P3 }));
+    if (ex - lastX > 110) { const end = ex > W - 120; const tx = svg("text", { class: "event-text", x: end ? ex - 4 : ex + 4, y: y1 - 14, "text-anchor": end ? "end" : "start" }); tx.textContent = L(ev, "label"); root.append(tx); lastX = ex; }
+  }
+  const cross = svg("line", { class: "crosshair", y1: y1, y2: y3 + P3, visibility: "hidden" });
+  const hit = svg("rect", { x: m.l, y: y1, width: iw, height: y3 + P3 - y1, fill: "transparent", tabindex: 0 });
+  root.append(cross, hit);
+  const at = (i) => {
+    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
+    const w = full[i], s = weeks.get(w) || { n: 0, eco: 0, fav: 0, neu: 0, cri: 0, rel: [] };
+    const rows = s.eco ? STANCES.map(([f, k, lab]) => ({ value: pct(s[f] / s.eco, 0), label: `${lab} (${s[f]})`, key: POS_COLOR[k], keyShape: "swatch" })) : [];
+    rows.push({ value: num(s.n), label: t("pt_tt_volume", { eco: num(s.eco) }) });
+    if (s.rel.length >= 2) rows.push({ value: times(median(s.rel)), label: t("pt_tt_reaction", { n: s.rel.length }) });
+    return { title: t("week_of", { date: fmtDay(w) }), rows, note: s.eco && s.eco < PT_MIN ? t("pt_few") : null };
+  };
+  let cur = full.length - 1;
+  const show = (e, anchor) => { const b = at(cur); showTip(anchor || e, b.title, b.rows, b.note); };
+  hit.addEventListener("pointermove", (e) => { const r = root.getBoundingClientRect(); cur = Math.max(0, Math.min(full.length - 1, Math.round(((((e.clientX - r.left) / r.width) * W - m.l) / iw) * (full.length - 1)))); show(e); });
+  hit.addEventListener("pointerleave", () => { hideTip(); cross.setAttribute("visibility", "hidden"); });
+  hit.addEventListener("focus", (e) => show(e));
+  hit.addEventListener("blur", () => { hideTip(); cross.setAttribute("visibility", "hidden"); });
+  hit.addEventListener("keydown", (e) => { if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return; e.preventDefault(); cur = Math.max(0, Math.min(full.length - 1, cur + (e.key === "ArrowRight" ? 1 : -1))); show(e, hit); });
+  box.append(root);
+  setTable("position-temps", [{ label: t("th_week") }, { label: t("th_tweets"), num: true }, { label: t("th_eco_tweets"), num: true },
+    { label: t("th_favorable"), num: true }, { label: t("th_neutral"), num: true }, { label: t("th_critical"), num: true }, { label: t("pt_reaction"), num: true }],
+    full.map((w) => { const s = weeks.get(w) || { n: 0, eco: 0, fav: 0, neu: 0, cri: 0, rel: [] };
+      return [fmtDay(w), num(s.n), num(s.eco), ...["fav", "neu", "cri"].map((f) => (s.eco ? pct(s[f] / s.eco, 0) : "–")), s.rel.length >= 2 ? times(median(s.rel)) : "–"]; }));
+}
 // Petits multiples : une courbe par candidat, sur une échelle commune, avec l'ensemble en gris
 function renderEvolutionGrid(box, full, all, perCand) {
   const rows = [...perCand].map(([k, m]) => { let n = 0, eco = 0; for (const v of m.values()) { n += v.n; eco += v.eco; } return { k, m, n, eco }; })
@@ -914,16 +1018,19 @@ function renderApercu(panel) {
   const evo = card("evolution", t("evo_title"), null, S.evoMode === "candidats" ? t("evo_sub_grid") : t("evo_sub"),
     el("div", { class: "controls" }, segCtrl([["ensemble", t("evo_overall")], ["candidats", t("evo_by_cand")]], S.evoMode, (k) => { S.evoMode = k; render(); }, t("evo_mode"))),
     evoLegend, el("div", { class: "chart" }));
+  const ptLegend = el("div", { class: "legend" });
+  const pt = card("position-temps", t("pt_title"), "engagement", t("pt_sub"), ptLegend, el("div", { class: "chart" }));
   const heatBox = el("div", { class: "chart" });
   const tabs = el("div", { class: "tabs controls", role: "tablist" }, [["themes", t("heat_themes")], ["cadrage", t("heat_frames")], ["stance", t("heat_stance")]].map(([k, label]) =>
     el("button", { class: "tab", type: "button", role: "tab", "aria-selected": String(S.apercuHeat === k), text: label, onclick: () => { S.apercuHeat = k; render(); } })));
   const heat = card("apercu-heat", t("heat_title"), S.apercuHeat === "themes" ? "macro" : "cadrage", S.apercuHeat === "stance" ? t("heat_sub_stance") : t("heat_sub"), tabs, heatBox);
-  panel.append(compass, sail, pos, eng, evo, heat);
+  panel.append(compass, sail, pos, eng, evo, pt, heat);
   if (wrap) { drawCompass(wrap, rows, { interactive: true }); compassTable("boussole", rows); } else setTable("boussole", [], []);
   renderSaillance(sail.querySelector(".chart"), stats);
   renderPosition(pos.querySelector(".chart"), stats);
   renderEngagement(eng.querySelector(".chart"), tweets);
   renderEvolution(evo.querySelector(".chart"), evoLegend, tweets);
+  renderPositionTime(pt.querySelector(".chart"), ptLegend, tweets);
   const stance = S.apercuHeat === "stance";
   const d = stance ? stanceByTheme(stats) : distribution(stats, S.apercuHeat, true);
   renderHeat(heatBox, "apercu-heat", d.rows, d.cols, { empty: t("empty_eco_period"), note: stance ? t("stance_note") : S.apercuHeat === "themes" ? t("multi_themes") : null,

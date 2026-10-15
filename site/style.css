@@ -684,3 +684,9 @@ legend { padding: 0; }
 @media (forced-colors: active) {
   .bar, .seg, .cell, .q0, .q1, .q2, .q3, .q4, .q5, .q6, .p0, .p1, .p2, .p3, .p4, .p5, .p6 { forced-color-adjust: none; }
 }
+
+/* positions dans le temps */
+.pt-panel { font-size: 12px; font-weight: 600; fill: var(--ink-2); }
+.pt-one { stroke: var(--axis); stroke-dasharray: 4 3; }
+.pt-line { stroke: var(--ink-2); }
+.pt-dot { fill: var(--ink-2); stroke: var(--surface); stroke-width: 1.5; }
