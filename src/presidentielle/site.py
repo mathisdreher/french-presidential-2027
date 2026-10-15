@@ -29,9 +29,10 @@ log = logging.getLogger(__name__)
 INACTIVE_DAYS = 30
 # Colonnes compactes : clé courte -> variable du livre de codes
 COLUMNS = {v.key: k for k, v in zip(
-    ["n", "th", "po", "ca", "pl", "ad", "vi", "pr", "to", "lg", "rd", "vs", "et", "ag", "mo", "ac", "re", "rx"],
+    ["n", "th", "po", "ca", "pl", "ad", "vi", "pr", "to", "lg", "rd", "vs", "et", "ag", "mo", "ac", "re", "rx", "ec", "hz"],
     [cb.NIVEAU, cb.THEMES, cb.POSITION, cb.CADRAGE, cb.POLARISATION, cb.ADVERSAIRE, cb.VICTIME, cb.PROCEDES, cb.TOPOI,
-     cb.LEGITIMATION, cb.RETARDEMENT, cb.VISION, cb.ETHOS, cb.AGENTIVITE, cb.MODALITE, cb.ACTE, cb.REGISTRE, cb.REACTIVITE])}
+     cb.LEGITIMATION, cb.RETARDEMENT, cb.VISION, cb.ETHOS, cb.AGENTIVITE, cb.MODALITE, cb.ACTE, cb.REGISTRE, cb.REACTIVITE,
+     cb.ECHELLE, cb.HORIZON])}
 
 
 def _encode(var: cb.Variable, value):

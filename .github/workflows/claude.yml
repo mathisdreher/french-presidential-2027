@@ -13,6 +13,7 @@ on:
           - echantillon
           - jeux
           - traduction
+          - recodage
           - tous
         default: ecologie_et_incertains
       taille_echantillon:

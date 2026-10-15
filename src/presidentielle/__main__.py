@@ -102,6 +102,7 @@ def _classify(args) -> int:
 def _publish(out: Path) -> None:
     from . import export, site, validate
     if config.CLASSIFICATIONS_FILE.exists():
+        classify_mod.reconcile()
         validate.run()
         export.run()
     site.build(out)

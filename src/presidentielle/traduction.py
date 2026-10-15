@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -23,6 +24,7 @@ from .storage import append_jsonl, read_jsonl
 log = logging.getLogger(__name__)
 
 DAILY_LIMIT = 300
+WORKERS = 6
 
 
 class Translation(BaseModel):
@@ -77,38 +79,51 @@ def translate(items: list[dict], *, model: Optional[str] = None, limit: Optional
         return 0
     model = model or config.claude_model()
     client = config.anthropic_client(max_retries=4)
-    n = 0
-    for it in items:
+
+    def call(it: dict):
         parts = [f"Tweet :\n\"\"\"\n{it['text']}\n\"\"\""]
         if it["resume"]:
             parts.append(f"Résumé :\n\"\"\"\n{it['resume']}\n\"\"\"")
         if it["implicites"]:
             parts.append(f"Présupposés :\n\"\"\"\n{it['implicites']}\n\"\"\"")
-        try:
-            resp = client.messages.parse(
-                model=model, max_tokens=4096,
-                system=[{"type": "text", "text": PROMPT, "cache_control": {"type": "ephemeral"}}],
-                messages=[{"role": "user", "content": "\n\n".join(parts)}],
-                output_format=Translation, output_config={"effort": "low"},
-            )
-        except (anthropic.AuthenticationError, anthropic.PermissionDeniedError, anthropic.BadRequestError):
-            raise  # erreur de configuration (clé, espace de travail) : inutile de continuer tweet par tweet
-        except anthropic.APIError as e:
-            log.error("[Traduction] %s : %s", it["id"], e)
-            continue
-        if resp.stop_reason != "end_turn" or resp.parsed_output is None:
-            log.error("[Traduction] %s : stop_reason=%s", it["id"], resp.stop_reason)
-            continue
-        out = resp.parsed_output
-        append_jsonl(config.TRANSLATIONS_FILE, [{
-            "id": it["id"], "src": source_hash(it["text"], it["resume"], it["implicites"]), "model": model,
-            "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "t": out.texte_en, "rs": (out.resume_en or None) if it["resume"] else None,
-            "im": (out.implicites_en or None) if it["implicites"] else None,
-        }])
-        n += 1
+        return client.messages.parse(
+            model=model, max_tokens=4096,
+            system=[{"type": "text", "text": PROMPT, "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": "\n\n".join(parts)}],
+            output_format=Translation, output_config={"effort": "low"},
+        )
+
+    n = 0
+    # appels en parallèle ; l'écriture reste dans ce fil, au fil des réponses
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+        futures = {pool.submit(call, it): it for it in items}
+        for fut in as_completed(futures):
+            it = futures[fut]
+            try:
+                resp = fut.result()
+            except (anthropic.AuthenticationError, anthropic.PermissionDeniedError, anthropic.BadRequestError):
+                for f in futures:
+                    f.cancel()
+                raise  # erreur de configuration (clé, espace de travail) : inutile de continuer tweet par tweet
+            except anthropic.APIError as e:
+                log.error("[Traduction] %s : %s", it["id"], e)
+                continue
+            if resp.stop_reason != "end_turn" or resp.parsed_output is None:
+                log.error("[Traduction] %s : stop_reason=%s", it["id"], resp.stop_reason)
+                continue
+            n += _save(it, resp.parsed_output, model)
     log.info("Traduction : %d tweets traduits par Claude", n)
     return n
+
+
+def _save(it: dict, out: Translation, model: str) -> int:
+    append_jsonl(config.TRANSLATIONS_FILE, [{
+        "id": it["id"], "src": source_hash(it["text"], it["resume"], it["implicites"]), "model": model,
+        "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "t": out.texte_en, "rs": (out.resume_en or None) if it["resume"] else None,
+        "im": (out.implicites_en or None) if it["implicites"] else None,
+    }])
+    return 1
 
 
 def run(*, model: Optional[str] = None, limit: Optional[int] = None) -> int:

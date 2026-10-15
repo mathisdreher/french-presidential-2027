@@ -4,7 +4,7 @@ from presidentielle import config
 
 FILES = {
     "RAW_TWEETS_FILE": "raw/tweets.jsonl", "METRICS_FILE": "raw/metrics.json", "CLASSIFICATIONS_FILE": "classified/classifications.jsonl",
-    "GAMES_FILE": "games/anonymized.jsonl", "EXPORTS_DIR": "exports", "REPORTS_DIR": "reports",
+    "GAMES_FILE": "games/anonymized.jsonl", "TRANSLATIONS_FILE": "translations/tweets_en.jsonl", "EXPORTS_DIR": "exports", "REPORTS_DIR": "reports",
     "VALIDATION_FILE": "reports/validation.json", "STATE_DIR": "state", "USERS_STATE_FILE": "state/users.json",
     "SINCE_STATE_FILE": "state/since_ids.json", "BATCHES_STATE_FILE": "state/batches.json",
     "VALIDATION_SAMPLE_FILE": "state/validation_sample.json",

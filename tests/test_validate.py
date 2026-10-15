@@ -26,7 +26,7 @@ def _vals(eco, pos="neutre", themes=(), procedes=()):
          "cadrage": "non_applicable", "polarisation": "aucune", "adversaire": "aucun", "victime": "aucune",
          "acte_discursif": "autre", "registre": "factuel", "reactivite": False, "themes": list(themes), "procedes": list(procedes),
          "topoi": [], "legitimation": [], "retardement": [], "vision": "non_applicable", "ethos": "indetermine",
-         "agentivite": "non_applicable", "modalite": "assertion"}
+         "agentivite": "non_applicable", "modalite": "assertion", "echelle": "non_applicable", "horizon": "non_applicable"}
     assert set(v) == {x.key for x in cb.VARIABLES}
     return v
 

@@ -215,6 +215,21 @@ FRAMEWORKS: tuple[Framework, ...] = (
         (Ref("Dryzek, J. S. (2013). The Politics of the Earth: Environmental Discourses, 3e éd. Oxford : Oxford University Press."),),
     ),
     Framework(
+        "echelle_horizon", "Échelle et horizon", "Michael Maniates ; Reinhart Koselleck ; Zygmunt Bauman",
+        "À qui revient l'effort écologique, et vers quel temps regarde-t-on ? Maniates a montré comment le "
+        "discours environnemental « individualise » la responsabilité : gestes, consommation, chacun pour soi, au "
+        "détriment des choix collectifs. Koselleck distingue le « champ d'expérience » (le passé qu'on mobilise) de "
+        "l'« horizon d'attente » (l'avenir qu'on promet) ; Bauman appelle « rétrotopie » l'idéal politique tourné vers "
+        "un passé perdu.",
+        "Pour chaque tweet écologie : à quelle échelle l'action est placée (individus, territoires, État et nation, "
+        "Europe et monde, entreprises et marché) et quel temps domine (passé regretté, passé mis en accusation, "
+        "présent et urgence, futur et projet).",
+        (Ref("Maniates, M. F. (2001). Individualization: Plant a tree, buy a bike, save the world? Global Environmental Politics, 1(3), 31-52.",
+             "https://doi.org/10.1162/152638001316881395"),
+         Ref("Koselleck, R. (1979/1990). Le futur passé. Contribution à la sémantique des temps historiques. Paris : Éditions de l'EHESS."),
+         Ref("Bauman, Z. (2017). Retrotopia. Cambridge : Polity.")),
+    ),
+    Framework(
         "engagement", "L'engagement relatif", "Mesure de ce site, d'après les études de l'engagement en ligne",
         "Les chiffres bruts d'un tweet dépendent d'abord de la notoriété de son auteur : un candidat suivi par "
         "deux millions de comptes obtient mécaniquement plus de réactions qu'un autre. Pour comparer, on rapporte "
@@ -306,13 +321,24 @@ THEMES = Variable(
 
 POSITION = Variable(
     "position", "choice", "Position", framework="cadrage", scope="ecologie",
-    instructions="The author's stance toward ecological action in this tweet.",
+    instructions=("The author's stance toward ecological action itself (climate, energy transition, environmental "
+                  "protection), not toward their opponents. Supporting nuclear power, energy sovereignty or lower energy "
+                  "prices counts as favourable only when framed as serving the climate or the transition; when framed "
+                  "against ecological constraints (wind turbines, low-emission zones, standards, taxes), it is critical. "
+                  "Attacking a government for doing too little for the climate is favourable."),
     options=(
-        Option("favorable_transition", "Favorable à la transition", "Supports ecological action, proposes or defends environmental or energy-transition measures",
-               "Soutient l'action écologique, propose ou défend des mesures de transition."),
-        Option("critique_ecologie", "Critique de l'écologie", "Criticises ecological policies, norms, activists, or frames ecology as punitive, ideological or harmful",
-               "Critique des politiques, normes ou militants écologistes, ou présente l'écologie comme punitive ou nuisible."),
-        Option("neutre", "Neutre", "States facts, reports information, or the stance is ambiguous", "Constat, information, ou position ambiguë."),
+        Option("favorable_transition", "Favorable à la transition",
+               "Supports ecological action: proposes, defends or demands climate, transition or environmental measures, "
+               "including by blaming others for doing too little",
+               "Soutient l'action écologique : propose, défend ou réclame des mesures, y compris en reprochant aux autres d'en faire trop peu."),
+        Option("critique_ecologie", "Critique de l'écologie",
+               "Opposes or attacks ecological policies, standards, taxes or activists, or presents ecology as punitive, "
+               "ideological, costly or harmful, even while claiming to favour a 'realistic' or 'popular' ecology",
+               "S'oppose aux politiques, normes, taxes ou militants écologistes, ou présente l'écologie comme punitive, idéologique ou coûteuse, même au nom d'une écologie « réaliste »."),
+        Option("neutre", "Neutre",
+               "No stance toward ecological action can be inferred: reports facts or events, or balances support and "
+               "criticism without a dominant side",
+               "Aucune position ne se dégage : constat, information, ou soutien et critique sans dominante."),
         Option("non_applicable", "Non applicable", "The tweet does not address ecology at all"),
     ),
 )
@@ -589,6 +615,41 @@ REACTIVITE = Variable(
     instructions="The tweet reacts to a specific current event (a news item, a vote, a disaster, a statement by someone else).",
 )
 
+ECHELLE = Variable(
+    "echelle", "choice", "Échelle de l'action", framework="echelle_horizon", scope="ecologie",
+    instructions=("At which level the tweet places ecological action or responsibility: who should act, decide or "
+                  "change. If several levels appear, choose the one the tweet insists on most."),
+    options=(
+        Option("individus", "Individus", "Individuals and households: personal gestures, behaviour, consumption, everyone's responsibility",
+               "Les individus et les ménages : gestes, comportements, consommation, responsabilité de chacun."),
+        Option("territoires", "Territoires", "Local level: municipalities, regions, rural areas, local communities and projects",
+               "L'échelon local : communes, régions, territoires ruraux, projets locaux."),
+        Option("etat_nation", "État et nation", "The State and the nation: laws, public planning and investment, national sovereignty",
+               "L'État et la nation : lois, planification, investissement public, souveraineté nationale."),
+        Option("europe_international", "Europe et monde", "The European Union or international level: EU rules, treaties, COPs, global cooperation",
+               "L'Union européenne ou l'international : règles européennes, traités, COP, coopération mondiale."),
+        Option("entreprises_marche", "Entreprises et marché", "Companies, industry, markets, prices and innovation",
+               "Les entreprises, l'industrie, le marché, les prix et l'innovation."),
+        Option("non_applicable", "Non applicable", "No level of action can be identified, or the tweet does not address ecology"),
+    ),
+)
+
+HORIZON = Variable(
+    "horizon", "choice", "Horizon temporel", framework="echelle_horizon", scope="ecologie",
+    instructions="The time orientation that dominates the tweet's argument about ecology.",
+    options=(
+        Option("passe_nostalgie", "Passé regretté", "Looks back to a past to restore or regain: a lost golden age, heritage, tradition, sovereignty to recover",
+               "Regarde vers un passé à retrouver : âge d'or perdu, héritage, tradition, souveraineté à reconquérir."),
+        Option("passe_accusation", "Passé mis en accusation", "Blames past decisions or record: what was destroyed, sold off or failed in previous years",
+               "Met en accusation des décisions passées : ce qui a été détruit, bradé ou raté les années précédentes."),
+        Option("present_urgence", "Présent et urgence", "Focuses on the present situation, an ongoing crisis or the urgency of now",
+               "Porte sur la situation présente, une crise en cours ou l'urgence du moment."),
+        Option("futur_projet", "Futur et projet", "Projects into the future: a plan, a promise, targets, future generations",
+               "Se projette dans l'avenir : un plan, une promesse, des objectifs, les générations futures."),
+        Option("non_applicable", "Non applicable", "No time orientation stands out, or the tweet does not address ecology"),
+    ),
+)
+
 # Rapport à la croissance (axe vertical de la boussole), d'après la typologie de Dryzek
 VISION_GROWTH_SCORE = {
     "survivalisme": 1.0, "radicalisme_vert": 1.0,
@@ -599,8 +660,11 @@ VISION_GROWTH_SCORE = {
 
 VARIABLES: tuple[Variable, ...] = (
     ECOLOGIE, NIVEAU, THEMES, POSITION, CADRAGE, POLARISATION, ADVERSAIRE, VICTIME, PROCEDES, TOPOI,
-    LEGITIMATION, RETARDEMENT, VISION, ETHOS, AGENTIVITE, MODALITE, ACTE, REGISTRE, REACTIVITE,
+    LEGITIMATION, RETARDEMENT, VISION, ETHOS, AGENTIVITE, MODALITE, ACTE, REGISTRE, REACTIVITE, ECHELLE, HORIZON,
 )
+# Version du livre de codes : un codage plus ancien des tweets écologie est refait (Jev au quotidien,
+# Claude avec la portée « recodage »). 2 : échelle, horizon, frontières de la position précisées.
+CODEBOOK_VERSION = 2
 VARIABLE_BY_KEY = {v.key: v for v in VARIABLES}
 THEME_KEYS = THEMES.option_keys
 

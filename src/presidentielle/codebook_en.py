@@ -12,7 +12,7 @@ VARIABLES = {
     "victime": "Designated victim", "procedes": "Devices", "topoi": "Topoi", "legitimation": "Legitimation",
     "retardement": "Climate delay", "vision": "Vision of ecology", "ethos": "Ethos", "agentivite": "Agency",
     "modalite": "Modality", "acte_discursif": "Speech act", "registre": "Emotional register",
-    "reactivite": "Reacting to the news",
+    "reactivite": "Reacting to the news", "echelle": "Scale of action", "horizon": "Time horizon",
 }
 
 OPTIONS = {
@@ -86,6 +86,10 @@ OPTIONS = {
     "acte_discursif": {"promesse_proposition": "Promise, proposal", "critique_attaque": "Criticism, attack",
                        "constat_information": "Statement, information", "appel_mobilisation": "Call to action", "autre": "Other"},
     "registre": {"factuel": "Factual", "engage": "Engaged", "alarmiste_indigne": "Alarmist, indignant"},
+    "echelle": {"individus": "Individuals", "territoires": "Local level", "etat_nation": "State and nation",
+                "europe_international": "Europe and the world", "entreprises_marche": "Business and markets", "non_applicable": "Not applicable"},
+    "horizon": {"passe_nostalgie": "Past to regain", "passe_accusation": "Past on trial", "present_urgence": "Present and urgency",
+                "futur_projet": "Future and plans", "non_applicable": "Not applicable"},
 }
 
 # clé -> (libellé, auteurs, ce que dit la théorie, comment elle est codée ici)
@@ -198,6 +202,17 @@ FRAMEWORKS = {
         "modernisation and economic rationalism, which bet on green growth and the market, −0.5; other visions 0.",
         "This is an index built for this site, for teaching purposes: it sums up two dimensions among others and "
         "depends on the quality of the coding. Candidates with fewer than 8 ecology tweets are not placed.",
+    ),
+    "echelle_horizon": (
+        "Scale and horizon", "Michael Maniates; Reinhart Koselleck; Zygmunt Bauman",
+        "Who is expected to make the ecological effort, and which time does the speaker look to? Maniates showed how "
+        "environmental discourse 'individualises' responsibility: gestures, consumption, everyone for themselves, at the "
+        "expense of collective choices. Koselleck distinguishes the 'space of experience' (the past one draws on) from "
+        "the 'horizon of expectation' (the future one promises); Bauman calls a political ideal turned towards a lost "
+        "past 'retrotopia'.",
+        "For each ecology tweet: at which scale action is placed (individuals, local level, State and nation, Europe and "
+        "the world, business and markets) and which time dominates (past to regain, past on trial, present and urgency, "
+        "future and plans).",
     ),
     "engagement": (
         "Relative engagement", "A measure built for this site, after studies of online engagement",

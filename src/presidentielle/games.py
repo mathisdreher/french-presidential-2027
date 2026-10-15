@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import random
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -25,6 +26,7 @@ from .storage import append_jsonl, read_jsonl
 log = logging.getLogger(__name__)
 
 PER_CANDIDATE = 12
+WORKERS = 6
 MIN_CHARS = 90
 PARTIES = [
     "Rassemblement national", "Front national", "La France insoumise", "France insoumise", "Parti socialiste",
@@ -110,30 +112,42 @@ def claude_rewrite(tweets: list[dict], *, model: Optional[str] = None, limit: Op
     model = model or config.claude_model()
     client = config.anthropic_client(max_retries=4)
     candidates = config.load_candidates(only_enabled=False)
+
+    def call(t: dict):
+        return client.messages.parse(
+            model=model, max_tokens=2048,
+            system=[{"type": "text", "text": GAMES_PROMPT, "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": f"Tweet (pré-anonymisé automatiquement) :\n\"\"\"\n{anonymize(t['text'], candidates)}\n\"\"\""}],
+            output_format=GameRewrite, output_config={"effort": "low"},
+        )
+
     n = 0
-    for t in todo:
-        try:
-            resp = client.messages.parse(
-                model=model, max_tokens=2048,
-                system=[{"type": "text", "text": GAMES_PROMPT, "cache_control": {"type": "ephemeral"}}],
-                messages=[{"role": "user", "content": f"Tweet (pré-anonymisé automatiquement) :\n\"\"\"\n{anonymize(t['text'], candidates)}\n\"\"\""}],
-                output_format=GameRewrite, output_config={"effort": "low"},
-            )
-        except (anthropic.AuthenticationError, anthropic.PermissionDeniedError, anthropic.BadRequestError):
-            raise  # erreur de configuration (clé, espace de travail) : inutile de continuer tweet par tweet
-        except anthropic.APIError as e:
-            log.error("[Jeux] %s : %s", t["id"], e)
-            continue
-        if resp.stop_reason != "end_turn" or resp.parsed_output is None:
-            log.error("[Jeux] %s : stop_reason=%s", t["id"], resp.stop_reason)
-            continue
-        out = resp.parsed_output
-        append_jsonl(config.GAMES_FILE, [{"id": t["id"], "model": model, "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                                          "texte": out.texte_anonymise, "indices": out.indices, "texte_en": out.texte_en,
-                                          "indices_en": out.indices_en, "reconnaissable": out.reconnaissable}])
-        n += 1
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+        futures = {pool.submit(call, t): t for t in todo}
+        for fut in as_completed(futures):
+            t = futures[fut]
+            try:
+                resp = fut.result()
+            except (anthropic.AuthenticationError, anthropic.PermissionDeniedError, anthropic.BadRequestError):
+                for f in futures:
+                    f.cancel()
+                raise  # erreur de configuration (clé, espace de travail) : inutile de continuer tweet par tweet
+            except anthropic.APIError as e:
+                log.error("[Jeux] %s : %s", t["id"], e)
+                continue
+            if resp.stop_reason != "end_turn" or resp.parsed_output is None:
+                log.error("[Jeux] %s : stop_reason=%s", t["id"], resp.stop_reason)
+                continue
+            n += _save(t, resp.parsed_output, model)
     log.info("Jeux : %d tweets préparés par Claude", n)
     return n
+
+
+def _save(t: dict, out: "GameRewrite", model: str) -> int:
+    append_jsonl(config.GAMES_FILE, [{"id": t["id"], "model": model, "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                                      "texte": out.texte_anonymise, "indices": out.indices, "texte_en": out.texte_en,
+                                      "indices_en": out.indices_en, "reconnaissable": out.reconnaissable}])
+    return 1
 
 
 def run_claude(*, model: Optional[str] = None, limit: Optional[int] = None) -> int:

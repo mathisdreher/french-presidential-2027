@@ -55,20 +55,31 @@ def load_rows() -> dict[str, dict]:
     return rows
 
 
-CLAUDE_SCOPES = ("incertains", "ecologie_et_incertains", "echantillon", "tous")
+CLAUDE_SCOPES = ("incertains", "ecologie_et_incertains", "echantillon", "tous", "recodage")
 
 
 def _match_candidate(tweet: dict, candidate: Optional[str]) -> bool:
     return not candidate or candidate.lower().lstrip("@") in (tweet["handle"].lower(), tweet["candidate"].lower())
 
 
+def outdated(result: Optional[dict]) -> bool:
+    """Codage fait avec une version plus ancienne du livre de codes."""
+    return bool(result) and result.get("codebook", 1) < cb.CODEBOOK_VERSION
+
+
+def needs_recoding(row: dict, key: str) -> bool:
+    """Tweet écologie dont le codage du moteur est antérieur au livre de codes actuel (nouvelles variables)."""
+    return bool(row.get("parle_ecologie")) and outdated(row.get(key))
+
+
 def pending_tweets(engine: str = "jev", limit: Optional[int] = None, candidate: Optional[str] = None) -> list[dict]:
-    """Tweets sans codage du moteur demandé."""
+    """Tweets sans codage du moteur demandé, ou tweets écologie à recoder avec le livre de codes actuel."""
     key = "claude" if engine == "claude" else "jev"
     rows = load_rows()
     out = []
     for tweet in read_jsonl(config.RAW_TWEETS_FILE):
-        if (rows.get(tweet["id"]) or {}).get(key):
+        row = rows.get(tweet["id"]) or {}
+        if row.get(key) and not needs_recoding(row, key):
             continue
         if not _match_candidate(tweet, candidate):
             continue
@@ -151,7 +162,16 @@ def claude_targets(scope: str, *, limit: Optional[int] = None, candidate: Option
     out = []
     for tweet in read_jsonl(config.RAW_TWEETS_FILE):
         row = rows.get(tweet["id"]) or {}
-        if row.get("claude") or not _match_candidate(tweet, candidate):
+        if not _match_candidate(tweet, candidate):
+            continue
+        if scope == "recodage":
+            # tweets écologie codés par Claude avec un livre de codes plus ancien (nouvelles variables)
+            if needs_recoding(row, "claude"):
+                out.append(tweet)
+                if limit and len(out) >= limit:
+                    break
+            continue
+        if row.get("claude"):
             continue
         jev = row.get("jev")
         if scope == "incertains":
@@ -195,7 +215,12 @@ def merge(tweet_id: str, jev: Optional[dict], claude: Optional[dict], existing: 
         raise ValueError("Aucun résultat à fusionner")
     row["final_source"] = source
 
-    values = (jev["values"] if source == "jev" else claude["values"])
+    values = dict(jev["values"] if source == "jev" else claude["values"])
+    if not values.get("parle_ecologie"):
+        # variables ajoutées au livre de codes après ce codage : valeurs imposées hors écologie
+        for key, default in cb.NON_ECOLOGIE_DEFAULTS.items():
+            if values.get(key) is None:
+                values[key] = default
     for key in CATEGORICAL:
         row[key] = values.get(key)
     if claude:
@@ -205,6 +230,23 @@ def merge(tweet_id: str, jev: Optional[dict], claude: Optional[dict], existing: 
         row["accord_ecologie"] = jev["values"]["parle_ecologie"] == claude["values"]["parle_ecologie"]
         row["accord_position"] = jev["values"]["position"] == claude["values"]["position"]
     return row
+
+
+def reconcile() -> int:
+    """Réapplique les règles de cohérence de Jev et la fusion aux lignes stockées (sans appel aux modèles)."""
+    from .jev_client import coherent
+    rows = load_rows()
+    updated = []
+    for tid, row in rows.items():
+        jev = row.get("jev")
+        fixed = bool(jev) and coherent(jev["values"], jev.get("probabilities") or {})
+        missing = row.get("parle_ecologie") is False and any(row.get(k) is None for k in cb.NON_ECOLOGIE_DEFAULTS)
+        if (fixed or missing) and (jev or row.get("claude")):
+            updated.append(merge(tid, None, None, row))
+    if updated:
+        _write(rows, updated)
+        log.info("Réconciliation : %d lignes mises à jour", len(updated))
+    return len(updated)
 
 
 def _write(rows: dict[str, dict], updated: list[dict]) -> None:
@@ -262,6 +304,7 @@ def _claude_result(parsed: TweetClassification, model: str, usage=None) -> dict:
     if not values["parle_ecologie"]:
         values.update(cb.NON_ECOLOGIE_DEFAULTS)
     return {
+        "codebook": cb.CODEBOOK_VERSION,
         "model": model,
         "classified_at": _now(),
         "values": values,

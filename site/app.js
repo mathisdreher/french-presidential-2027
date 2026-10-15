@@ -936,7 +936,7 @@ function renderApercu(panel) {
 const DISCOURS_GROUPS = [
   ["g_topics", ["macro", "cadrage", "appropriation"]],
   ["g_usthem", ["carre", "procedes", "ethos"]],
-  ["g_arguing", ["topoi", "legitimation", "retardement", "visions"]],
+  ["g_arguing", ["topoi", "legitimation", "retardement", "visions", "echelle_horizon"]],
   ["g_language", ["grammaire", "enonciation"]],
 ];
 const DISCOURS_ORDER = DISCOURS_GROUPS.flatMap(([, keys]) => keys);
@@ -1916,7 +1916,7 @@ function renderQui(box, P) {
     const n = P.rounds.length, score = P.rounds.reduce((a, r) => a + quiPoints(r), 0), best = Math.max(...P.rounds.map((r, i) => quiStreak({ rounds: P.rounds.slice(0, i + 1) })));
     // le grand chiffre compte les auteurs exacts ; les demi-points (bonne famille) apparaissent à part, dans le score
     const found = P.rounds.filter((r) => r.pick === r.it.c).length, family = P.rounds.filter((r) => r.pick !== null && r.pick !== r.it.c && sameBloc(r.pick, r.it.c)).length;
-    box.append(gameTop(P), endCard({ key: "qui", big: `${found}/${n}`, label: t("qui_end_label"), tierText: tier(n ? score / n : 0),
+    box.append(gameTop(P), endCard({ key: "qui", big: `${found}/${n}`, label: t("qui_end_label"), tierText: tier(n ? found / n : 0),
       text: t("qui_end_p"), extra: el("div", {}, el("p", { class: "end-label", text: t("qui_end_detail", { family, score: num(score), n }) }),
         best >= 2 ? el("p", { class: "end-label", text: t("best_streak", { n: best }) }) : null),
       share: t(P.daily ? "share_qui_daily" : "share_qui", { score: found, n, date: fmtShort(today()) }) }),

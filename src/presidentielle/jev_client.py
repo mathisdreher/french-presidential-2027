@@ -82,14 +82,36 @@ def flatten(response) -> dict:
     elif not values["themes"]:
         # écologie sans thème au-dessus du seuil : garder le plus probable
         values["themes"] = [max(probs["themes"].items(), key=lambda kv: kv[1])[0]]
+    coherent(values, probs)
 
     return {
+        "codebook": cb.CODEBOOK_VERSION,
         "values": values,
         "probabilities": probs,
         "confidence": conf,
         "model": response.model,
         "usage": {"input_tokens": response.usage.input_tokens, "output_tokens": response.usage.output_tokens},
     }
+
+
+# Variables écologie pour lesquelles « non applicable » contredit un tweet classé écologie : une
+# position existe toujours (« neutre » au besoin). Échelle et horizon gardent leur « non applicable ».
+STANCE_REQUIRED = ("position",)
+
+
+def coherent(values: dict, probs: dict) -> bool:
+    """Tweet écologie codé « non applicable » sur une variable à position obligatoire : retenir la catégorie
+    la plus probable parmi les autres. Renvoie True si une valeur a changé (corrige aussi les codages stockés)."""
+    changed = False
+    if not values.get("parle_ecologie"):
+        return False
+    for key in STANCE_REQUIRED:
+        if values.get(key) != "non_applicable":
+            continue
+        rest = {k: p for k, p in (probs.get(key) or {}).items() if k != "non_applicable"}
+        values[key] = max(rest, key=rest.get) if rest else "neutre"
+        changed = True
+    return changed
 
 
 class JevClassifier:
