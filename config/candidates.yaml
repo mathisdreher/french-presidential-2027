@@ -7,6 +7,8 @@
 # party_en, note, note_en : facultatifs, pour la version anglaise et les signalements
 # cadrage : [x, y, zoom] du centre du visage dans la photo (fractions de la largeur et de la hauteur),
 #           pour centrer les portraits ronds du site ; zoom 1 = photo entière en largeur
+# noms    : façons de nommer le candidat dans un tweet, pour le réseau « qui nomme qui » (sans accents ni
+#           majuscules requis). Par défaut : nom complet et patronyme. À préciser quand le patronyme est ambigu.
 # enabled : false -> ignoré par le pipeline
 #
 # Liste établie mi-octobre 2026 (sources : France 24, Public Sénat, Touteleurope).
@@ -32,6 +34,7 @@ candidates:
     party: Horizons
     bloc: centre
     handle: EPhilippe_LH
+    noms: [Édouard Philippe]
     cadrage: [0.42, 0.36, 1]
     status: declare
   - name: Bruno Retailleau

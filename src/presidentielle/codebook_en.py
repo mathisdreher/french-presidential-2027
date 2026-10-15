@@ -212,12 +212,16 @@ FRAMEWORKS = {
         "measure exposure, not reaction.",
     ),
     "reseau": (
-        "The network of the debate's words", "Network analysis; Mathieu Jacomy and co-authors (Gephi)",
-        "A network links the candidates to the formulas or topics they use. Two candidates close together in the "
-        "drawing share expressions or subjects; a formula in the centre travels between camps, one on the edge "
-        "belongs to a few. The positions have no unit: only proximity matters.",
-        "A light version, computed in your browser with a spring layout close to ForceAtlas2, Gephi's algorithm. "
-        "The thickness of a link is the number of tweets. The .gexf file opens in Gephi for a full analysis.",
+        "The network of the debate", "Network analysis; Mathieu Jacomy and co-authors (Gephi), Vincent Blondel and co-authors",
+        "Four networks link the candidates: to the formulas they use, to the topics they cover, to each other by how similar "
+        "their ecology discourse is, and to each other by who names whom. Two points close together in the drawing share "
+        "expressions, subjects or a way of speaking; a formula in the centre travels between camps. The positions have no "
+        "unit: only proximity matters.",
+        "Computed in your browser with a spring layout close to ForceAtlas2, Gephi's algorithm. Proximity: each candidate "
+        "has a profile (share of their ecology tweets in each category of topic, position, framing, vision, delay, adversary "
+        "and topoi, each variable weighing the same); they are linked to the three closest profiles (cosine similarity), "
+        "and groups are detected with the Louvain method. Who names whom: a link goes from a tweet's author to every other "
+        "candidate whose @account or name appears in it. The .gexf file opens in Gephi for a full analysis.",
     ),
     "lexique": (
         "Lexicometry", "Ludovic Lebart, André Salem, Ted Dunning",

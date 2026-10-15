@@ -67,7 +67,8 @@ function debounce(fn, ms) { let h; return (...a) => { clearTimeout(h); h = setTi
 function shuffle(arr, rnd = Math.random) { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 const mean = (xs, f) => (xs.length ? xs.reduce((a, x) => a + f(x), 0) / xs.length : 0);
-const smooth = () => (matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
+const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const smooth = () => (reducedMotion() ? "auto" : "smooth");
 const NULLISH = new Set(["non_applicable", "aucun", "aucune", "indetermine"]);
 const STANCE = { favorable_transition: 1, critique_ecologie: -1 };
 const MIN_N = 20;
@@ -114,6 +115,23 @@ function setupFormats() {
 const num = (x) => FMT.n.format(x);
 const pct = (x, digits = 1) => (digits ? FMT.p1 : FMT.p0).format(100 * x) + (LANG === "fr" ? " %" : "%");
 const f2 = (x) => FMT.f2.format(x);
+// Fait défiler le premier nombre d'un texte depuis zéro (« 3 063 tweets », « 13,9 % »), au format de la langue
+function countUp(node, ms = 900) {
+  const txt = node.textContent, m = txt.match(/\d[\d\s\u202f\u00a0.,]*\d|\d/);
+  if (!m) return;
+  const dec = LANG === "fr" ? "," : ".", raw = m[0].trim();
+  const clean = raw.replace(LANG === "fr" ? /[\s\u202f\u00a0.]/g : /[\s\u202f\u00a0,]/g, "").replace(dec, ".");
+  const target = Number(clean), digits = clean.includes(".") ? clean.split(".")[1].length : 0;
+  if (!Number.isFinite(target) || target === 0) return;
+  const fmt = new Intl.NumberFormat(LANG === "fr" ? "fr-FR" : "en-GB", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  const t0 = performance.now(), before = txt.slice(0, m.index), after = txt.slice(m.index + m[0].length);
+  const tick = (now) => {
+    const p = Math.min(1, (now - t0) / ms), v = target * (1 - Math.pow(1 - p, 3));
+    node.textContent = before + fmt.format(p < 1 ? v : target) + after;
+    if (p < 1 && node.isConnected) requestAnimationFrame(tick); else node.textContent = txt;
+  };
+  requestAnimationFrame(tick);
+}
 const signed = (x) => FMT.s2.format(Math.abs(x) < 0.005 ? 0 : x);
 const parseDay = (s) => new Date(s + "T00:00:00Z");
 const isoDay = (d) => d.toISOString().slice(0, 10);
@@ -127,7 +145,7 @@ const S = {
   data: null, games: { items: [] }, cands: [], cand: new Map(), vars: new Map(), fw: new Map(), tweets: [],
   periods: [], period: "all", bloc: "", focus: "", tab: "jouer",
   apercuHeat: "themes", discours: "carre", discoursVar: {}, discoursScope: "ecologie", selectedCell: null,
-  salMode: "part", evoMode: "ensemble", netMode: "formules", engBase: new Map(),
+  salMode: "part", evoMode: "ensemble", netMode: "formules", netScope: "tous", engBase: new Map(),
   x: { ...X_DEFAULT }, mots: { who: "", mode: "candidats" },
   tables: new Map(), openTables: new Set(), openChips: new Set(),
   play: null, filtersOpen: false, langInUrl: false, scrollTo: null, focusTo: null,
@@ -145,7 +163,7 @@ function decode(data) {
   const vars = data.codebook.variables.filter((v) => v.short !== "e");
   S.tweets = rows.map((r) => {
     const tw = { i: r[at.i], c: S.cands[r[at.c]].key, d: r[at.d], e: r[at.e], p: r[at.p], s: r[at.s], l: r[at.l], rt: r[at.rt],
-      rp: r[at.rp], qt: r[at.qt], bm: r[at.bm], vw: r[at.vw], ma: r[at.ma], cj: r[at.cj] };
+      rp: r[at.rp], qt: r[at.qt], bm: r[at.bm], vw: r[at.vw], ma: r[at.ma], cj: r[at.cj], nm: (at.nm === undefined ? null : r[at.nm]) || [], fm: (at.fm === undefined ? null : r[at.fm]) || [] };
     for (const v of vars) {
       const raw = r[at[v.short]];
       if (raw === null || raw === undefined) { tw[v.key] = v.kind === "multi" ? [] : null; continue; }
@@ -1021,83 +1039,165 @@ function renderAppropriation(panel) {
 }
 
 /* =================================================================== réseau */
-// Graphe biparti candidats – formules (toute l'étude) ou candidats – thèmes (période et famille choisies)
+// Quatre réseaux : candidats – formules (tout le corpus), candidats – thèmes, proximité des discours et « qui nomme qui »
+// (période et famille choisies). Disposition à ressorts animée, points déplaçables, zoom.
+const BLOC_COLOR = { gauche_radicale: "#c8382f", gauche: "#e0679c", ecologistes: "#2f9e5c", centre: "#e8a01c", droite: "#2f6fd0", souverainistes: "#8a5cc2", extreme_droite: "#4a4f9e" };
+const blocColor = (k) => BLOC_COLOR[(S.cand.get(k) || {}).bloc] || "#8a8a84";
+const GROUP_COLOR = ["#e69f00", "#56b4e9", "#009e73", "#cc79a7", "#0072b2", "#d55e00", "#8a8a84"];
+// Profil de discours : part des tweets écologie dans chaque catégorie de ces variables, chaque variable pesant autant
+const PROX_VARS = ["themes", "position", "cadrage", "vision", "retardement", "adversaire", "topoi"];
+const PROX_MIN = 8, PROX_K = 3;
+
+function proxProfiles() {
+  const out = [];
+  for (const s of byCandidate(filtered())) {
+    const eco = s.tweets.filter((tw) => tw.e);
+    if (eco.length < PROX_MIN) continue;
+    const vec = [];
+    for (const key of PROX_VARS) {
+      const v = V(key);
+      if (!v) continue;
+      const block = v.options.filter((o) => !NULLISH.has(o.key))
+        .map((o) => eco.filter((tw) => (Array.isArray(tw[key]) ? tw[key].includes(o.key) : tw[key] === o.key)).length / eco.length);
+      const norm = Math.hypot(...block) || 1;
+      vec.push(...block.map((x) => x / norm));
+    }
+    out.push({ key: s.key, n: eco.length, vec });
+  }
+  return out.sort((a, b) => byBloc(a.key, b.key));
+}
+// Détection de communautés par la méthode de Louvain (Blondel et coauteurs, 2008), graphe pondéré non orienté
+function louvain(n, links) {
+  let part = Array.from({ length: n }, (_, i) => i);
+  let adj = Array.from({ length: n }, () => new Map());
+  for (const { a, b, w } of links) { adj[a].set(b, (adj[a].get(b) || 0) + w); adj[b].set(a, (adj[b].get(a) || 0) + w); }
+  for (let level = 0; level < 10; level++) {
+    const N = adj.length, k = adj.map((m) => [...m.values()].reduce((s, x) => s + x, 0)), m2 = k.reduce((s, x) => s + x, 0);
+    if (!m2) break;
+    const com = Array.from({ length: N }, (_, i) => i), tot = [...k];
+    let moved = true, any = false;
+    while (moved) {
+      moved = false;
+      for (let i = 0; i < N; i++) {
+        const ci = com[i], wTo = new Map();
+        for (const [j, w] of adj[i]) if (j !== i) wTo.set(com[j], (wTo.get(com[j]) || 0) + w);
+        tot[ci] -= k[i];
+        let best = ci, gain = (wTo.get(ci) || 0) - (tot[ci] * k[i]) / m2;
+        for (const [c, w] of wTo) { const g = w - (tot[c] * k[i]) / m2; if (g > gain + 1e-12) { gain = g; best = c; } }
+        tot[best] += k[i];
+        if (best !== ci) { com[i] = best; moved = true; any = true; }
+      }
+    }
+    if (!any) break;
+    const ids = new Map();
+    com.forEach((c, i) => { if (!ids.has(c)) ids.set(c, ids.size); com[i] = ids.get(c); });
+    part = part.map((c) => com[c]);
+    const next = Array.from({ length: ids.size }, () => new Map());
+    adj.forEach((m, i) => m.forEach((w, j) => next[com[i]].set(com[j], (next[com[i]].get(com[j]) || 0) + w)));
+    adj = next;
+  }
+  return part;
+}
+function modularity(n, links, part) {
+  const k = new Array(n).fill(0), inC = new Map(), tot = new Map();
+  let m2 = 0;
+  for (const { a, b, w } of links) { k[a] += w; k[b] += w; m2 += 2 * w; if (part[a] === part[b]) inC.set(part[a], (inC.get(part[a]) || 0) + 2 * w); }
+  if (!m2) return 0;
+  k.forEach((x, i) => tot.set(part[i], (tot.get(part[i]) || 0) + x));
+  let q = 0;
+  for (const [c, x] of tot) q += (inC.get(c) || 0) / m2 - (x / m2) ** 2;
+  return q;
+}
+
 function networkData(mode) {
   const nodes = new Map(), edges = [];
   const node = (id, props) => { if (!nodes.has(id)) nodes.set(id, { id, w: 0, ...props }); return nodes.get(id); };
+  const cand = (k) => node("c:" + k, { type: "cand", key: k, label: candName(k) });
+  const done = (extra) => ({ nodes: [...nodes.values()], edges, ...extra });
   if (mode === "formules") {
-    for (const f of ((S.data.lexique || {}).formules || []).filter((x) => x.total > 0)) {
-      for (const [k, n] of Object.entries(f.par_candidat || {})) {
-        if (!S.cand.has(k)) continue;
-        node("c:" + k, { type: "cand", key: k, label: candName(k) }).w += n;
-        node("f:" + f.key, { type: "term", label: LANG === "en" && f.en ? f.en : f.label.replace(/[«»]/g, "").trim(), title: f.label }).w += n;
-        edges.push({ s: "c:" + k, t: "f:" + f.key, w: n });
-      }
+    // formules employées dans les tweets de la période et de la famille choisies, comme les thèmes
+    const list = (S.data.lexique || {}).formules || [], pairs = new Map();
+    for (const tw of filtered()) for (const i of tw.fm || []) { const id = tw.c + " " + i; pairs.set(id, (pairs.get(id) || 0) + 1); }
+    for (const [id, n] of pairs) {
+      const [k, i] = id.split(" "), f = list[Number(i)];
+      if (!f || !S.cand.has(k)) continue;
+      cand(k).w += n;
+      node("f:" + f.key, { type: "term", label: LANG === "en" && f.en ? f.en : f.label.replace(/[«»]/g, "").trim(), title: f.label }).w += n;
+      edges.push({ s: "c:" + k, t: "f:" + f.key, w: n });
     }
-  } else {
+    return done();
+  }
+  if (mode === "themes") {
     for (const s of byCandidate(filtered())) {
       const eco = s.tweets.filter((tw) => tw.e);
       for (const o of V("themes").options) {
         const n = eco.filter((tw) => tw.themes.includes(o.key)).length;
         // seuls les thèmes qui pèsent dans le discours du candidat : au moins 2 tweets et 10 % de ses tweets écologie
         if (n < Math.max(2, 0.1 * eco.length)) continue;
-        node("c:" + s.key, { type: "cand", key: s.key, label: candName(s.key) }).w += n;
+        cand(s.key).w += n;
         node("t:" + o.key, { type: "term", label: L(o, "label") }).w += n;
         edges.push({ s: "c:" + s.key, t: "t:" + o.key, w: n });
       }
     }
+    return done();
   }
-  return { nodes: [...nodes.values()], edges };
+  if (mode === "mentions") {
+    const pairs = new Map();
+    for (const tw of filtered()) {
+      if (S.netScope === "eco" && !tw.e) continue;
+      for (const j of tw.nm || []) {
+        const to = (S.cands[j] || {}).key;
+        if (to && to !== tw.c) pairs.set(tw.c + " " + to, (pairs.get(tw.c + " " + to) || 0) + 1);
+      }
+    }
+    for (const [id, n] of pairs) { const [a, b] = id.split(" "); cand(a); cand(b).w += n; edges.push({ s: "c:" + a, t: "c:" + b, w: n }); }
+    return done({ directed: true });
+  }
+  // Proximité : chaque candidat relié à ses trois voisins de discours les plus proches (similarité cosinus)
+  const P = proxProfiles();
+  if (P.length < 3) return done();
+  const sim = P.map((a) => P.map((b) => cosine(a.vec, b.vec)));
+  const pairs = new Map();
+  P.forEach((_, i) => P.map((__, j) => j).filter((j) => j !== i).sort((x, y) => sim[i][y] - sim[i][x]).slice(0, PROX_K)
+    .forEach((j) => pairs.set(Math.min(i, j) + "-" + Math.max(i, j), sim[i][j])));
+  const links = [...pairs].map(([id, w]) => { const [a, b] = id.split("-").map(Number); return { a, b, w }; });
+  const raw = louvain(P.length, links);
+  // groupes numérotés du plus grand au plus petit
+  const sizes = new Map();
+  raw.forEach((g) => sizes.set(g, (sizes.get(g) || 0) + 1));
+  const order = [...sizes.keys()].sort((a, b) => sizes.get(b) - sizes.get(a) || raw.indexOf(a) - raw.indexOf(b));
+  const part = raw.map((g) => order.indexOf(g));
+  P.forEach((p, i) => Object.assign(cand(p.key), { w: p.n, group: part[i], near: P.map((q, j) => [q.key, sim[i][j]]).filter(([k]) => k !== p.key).sort((a, b) => b[1] - a[1]).slice(0, 4) }));
+  for (const { a, b, w } of links) edges.push({ s: "c:" + P[a].key, t: "c:" + P[b].key, w: Math.round(w * 1000) / 1000 });
+  const groups = order.map((_, g) => P.filter((__, i) => part[i] === g).map((p) => p.key));
+  // accord avec les familles : part des candidats qui appartiennent à la famille majoritaire de leur groupe
+  const agree = groups.reduce((s, keys) => { const c = new Map(); keys.forEach((k) => { const b = (S.cand.get(k) || {}).bloc; c.set(b, (c.get(b) || 0) + 1); }); return s + Math.max(...c.values()); }, 0) / P.length;
+  return done({ groups, q: modularity(P.length, links, part), agree });
 }
-// Disposition à ressorts (Fruchterman et Reingold), puis écartement des étiquettes qui se chevauchent
-function layoutNetwork(nodes, edges, W, H) {
-  const at = new Map(nodes.map((n, i) => [n.id, i]));
-  const cands = nodes.filter((n) => n.type === "cand"), terms = nodes.filter((n) => n.type === "term");
-  cands.forEach((n, i) => { const a = (2 * Math.PI * i) / cands.length; n.x = W / 2 + Math.cos(a) * W * 0.38; n.y = H / 2 + Math.sin(a) * H * 0.38; });
-  terms.forEach((n, i) => { const a = (2 * Math.PI * i) / terms.length + 0.3; n.x = W / 2 + Math.cos(a) * W * 0.16; n.y = H / 2 + Math.sin(a) * H * 0.16; });
-  const k = Math.sqrt((W * H) / Math.max(nodes.length, 1)) * 0.8, maxW = Math.max(...edges.map((e) => e.w), 1);
-  let temp = W / 6;
-  for (let it = 0; it < 350; it++) {
-    const dx = new Float64Array(nodes.length), dy = new Float64Array(nodes.length);
-    for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
-      const ex = nodes[i].x - nodes[j].x, ey = nodes[i].y - nodes[j].y, d = Math.max(1, Math.hypot(ex, ey)), f = (k * k) / d;
-      dx[i] += (ex / d) * f; dy[i] += (ey / d) * f; dx[j] -= (ex / d) * f; dy[j] -= (ey / d) * f;
-    }
-    for (const e of edges) {
-      const i = at.get(e.s), j = at.get(e.t), ex = nodes[i].x - nodes[j].x, ey = nodes[i].y - nodes[j].y, d = Math.max(1, Math.hypot(ex, ey));
-      const f = ((d * d) / k) * (0.4 + e.w / maxW);
-      dx[i] -= (ex / d) * f; dy[i] -= (ey / d) * f; dx[j] += (ex / d) * f; dy[j] += (ey / d) * f;
-    }
-    nodes.forEach((n, i) => {
-      dx[i] -= (n.x - W / 2) * 0.05 * k / 10; dy[i] -= (n.y - H / 2) * 0.05 * k / 10;
-      const d = Math.max(1, Math.hypot(dx[i], dy[i])), step = Math.min(d, temp);
-      n.x = clamp(n.x + (dx[i] / d) * step, n.r, W - n.r); n.y = clamp(n.y + (dy[i] / d) * step, 16, H - 16);
-    });
-    temp *= 0.985;
-  }
-  for (let it = 0; it < 80; it++) {
-    let moved = false;
-    for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
-      const a = nodes[i], b = nodes[j], ox = (a.r + b.r) - Math.abs(a.x - b.x), oy = (a.h + b.h) / 2 + 2 - Math.abs(a.y - b.y);
-      if (ox <= 0 || oy <= 0) continue;
-      moved = true;
-      if (ox < oy) { const s = (a.x < b.x ? -1 : 1) * ox / 2; a.x += s; b.x -= s; } else { const s = (a.y < b.y ? -1 : 1) * oy / 2; a.y += s; b.y -= s; }
-    }
-    nodes.forEach((n) => { n.x = clamp(n.x, n.r, W - n.r); n.y = clamp(n.y, n.h / 2, H - n.h / 2); });
-    if (!moved) break;
-  }
+
+function convexHull(pts) {
+  const p = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (p.length < 3) return p;
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower = [], upper = [];
+  for (const q of p) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], q) <= 0) lower.pop(); lower.push(q); }
+  for (const q of [...p].reverse()) { while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], q) <= 0) upper.pop(); upper.push(q); }
+  return lower.slice(0, -1).concat(upper.slice(0, -1));
 }
 const xmlEsc = (x) => String(x).replace(/[<>&"']/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;" })[c]);
-// Fichier GEXF pour Gephi, avec les positions de la version légère
-function gexf(nodes, edges, mode) {
-  const attrs = (n) => `<attvalues><attvalue for="0" value="${n.type === "cand" ? "candidat" : mode}"/><attvalue for="1" value="${xmlEsc(n.type === "cand" ? blocLabel((S.cand.get(n.key) || {}).bloc) : "")}"/></attvalues>`;
+const hexRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+// Fichier GEXF pour Gephi, avec les positions affichées (y compris les points déplacés)
+function gexf(net, mode) {
+  const { nodes, edges, directed } = net;
+  const attrs = (n) => `<attvalues><attvalue for="0" value="${n.type === "cand" ? "candidat" : mode}"/><attvalue for="1" value="${xmlEsc(n.type === "cand" ? blocLabel((S.cand.get(n.key) || {}).bloc) : "")}"/>${n.group !== undefined ? `<attvalue for="2" value="${n.group + 1}"/>` : ""}</attvalues>`;
+  const color = (n) => { const [r, g, b] = n.type === "cand" ? hexRgb(blocColor(n.key)) : [150, 150, 140]; return `<viz:color r="${r}" g="${g}" b="${b}"/>`; };
   return `<?xml version="1.0" encoding="UTF-8"?>
 <gexf xmlns="http://www.gexf.net/1.2draft" xmlns:viz="http://www.gexf.net/1.2draft/viz" version="1.2">
-  <meta lastmodifieddate="${S.data.generated_at.slice(0, 10)}"><creator>${xmlEsc(t("brand"))}</creator><description>${xmlEsc(t(mode === "formules" ? "net_desc_formules" : "net_desc_themes"))}</description></meta>
-  <graph mode="static" defaultedgetype="undirected">
-    <attributes class="node"><attribute id="0" title="type" type="string"/><attribute id="1" title="famille" type="string"/></attributes>
+  <meta lastmodifieddate="${S.data.generated_at.slice(0, 10)}"><creator>${xmlEsc(t("brand"))}</creator><description>${xmlEsc(t("net_desc_" + mode))}</description></meta>
+  <graph mode="static" defaultedgetype="${directed ? "directed" : "undirected"}">
+    <attributes class="node"><attribute id="0" title="type" type="string"/><attribute id="1" title="famille" type="string"/><attribute id="2" title="groupe" type="integer"/></attributes>
     <nodes>
-${nodes.map((n) => `      <node id="${xmlEsc(n.id)}" label="${xmlEsc(n.label)}">${attrs(n)}<viz:size value="${(4 + Math.sqrt(n.w) * 2).toFixed(1)}"/><viz:position x="${n.x.toFixed(1)}" y="${(-n.y).toFixed(1)}" z="0"/></node>`).join("\n")}
+${nodes.map((n) => `      <node id="${xmlEsc(n.id)}" label="${xmlEsc(n.label)}">${attrs(n)}<viz:size value="${(4 + Math.sqrt(n.w) * 2).toFixed(1)}"/>${color(n)}<viz:position x="${n.x.toFixed(1)}" y="${(-n.y).toFixed(1)}" z="0"/></node>`).join("\n")}
     </nodes>
     <edges>
 ${edges.map((e, i) => `      <edge id="${i}" source="${xmlEsc(e.s)}" target="${xmlEsc(e.t)}" weight="${e.w}"/>`).join("\n")}
@@ -1106,55 +1206,260 @@ ${edges.map((e, i) => `      <edge id="${i}" source="${xmlEsc(e.s)}" target="${x
 </gexf>
 `;
 }
+
 function renderNetwork(box) {
+  cancelAnimationFrame(S.netFrame || 0);
   box.replaceChildren();
-  const { nodes, edges } = networkData(S.netMode);
+  const mode = S.netMode, net = networkData(mode), { nodes, edges, directed } = net;
   if (edges.length < 2) { box.append(el("p", { class: "empty", text: t("net_empty") })); setTable("reseau", [], []); return; }
-  const W = Math.max(300, box.clientWidth || 700), H = Math.round(W < 600 ? W * 1.15 : Math.min(600, W * 0.62)), narrow = W < 600;
-  const maxW = Math.max(...nodes.filter((n) => n.type === "term").map((n) => n.w), 1);
+  const W = Math.max(300, box.clientWidth || 700), H = Math.round(W < 600 ? W * 1.15 : Math.min(620, W * 0.62)), narrow = W < 600;
+  const prox = mode === "proximite", maxTerm = Math.max(...nodes.filter((n) => n.type === "term").map((n) => n.w), 1);
+  const maxIn = Math.max(...nodes.map((n) => n.w), 1), base = narrow ? 26 : 34;
   for (const n of nodes) {
-    if (n.type === "cand") { n.size = narrow ? 26 : 34; n.r = n.size / 2 + 2; n.h = n.size + 4; }
-    else { n.font = (narrow ? 10.5 : 12) + Math.sqrt(n.w / maxW) * (narrow ? 3 : 5); n.r = (n.label.length * n.font * 0.56) / 2 + 12; n.h = n.font + 10; }
+    if (n.type === "cand") { n.size = Math.round(directed ? base * (0.75 + 0.75 * Math.sqrt(n.w / maxIn)) : base); n.r = n.size / 2 + 3; n.h = n.size + 6; }
+    else { n.font = (narrow ? 10.5 : 12) + Math.sqrt(n.w / maxTerm) * (narrow ? 3 : 5); n.r = (n.label.length * n.font * 0.56) / 2 + 12; n.h = n.font + 10; }
   }
-  layoutNetwork(nodes, edges, W, H);
-  const at = new Map(nodes.map((n) => [n.id, n])), maxE = Math.max(...edges.map((e) => e.w), 1);
-  const lines = svg("svg", { class: "net-edges", viewBox: `0 0 ${W} ${H}`, "aria-hidden": "true" });
-  const lineOf = edges.map((e) => { const a = at.get(e.s), b = at.get(e.t); const l = svg("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, "stroke-width": (0.8 + (e.w / maxE) * 5).toFixed(2) }); lines.append(l); return l; });
-  const wrap = el("div", { class: "net", style: `height:${H}px`, role: "group", "aria-label": t("net_aria") }, lines);
+  const at = new Map(nodes.map((n, i) => [n.id, i])), byId = new Map(nodes.map((n) => [n.id, n]));
+  // Seuil des liens : par mode, conservé d'un affichage à l'autre
+  const weights = [...new Set(edges.map((e) => e.w))].sort((a, b) => a - b);
+  const maxIdx = Math.max(0, weights.findLastIndex((w) => edges.filter((e) => e.w >= w).length >= 3));
+  S.netMin = S.netMin || {};
+  let minIdx = clamp(weights.indexOf(S.netMin[mode] ?? weights[0]), 0, maxIdx);
+  const active = () => edges.filter((e) => e.w >= weights[minIdx]);
+
+  // --- simulation : Fruchterman et Reingold, avec écartement des étiquettes à chaque pas
+  const k = Math.sqrt((W * H) / Math.max(nodes.length, 1)) * 0.8;
+  const start = () => {
+    const cands = nodes.filter((n) => n.type === "cand").sort((a, b) => byBloc(a.key, b.key)), terms = nodes.filter((n) => n.type === "term");
+    cands.forEach((n, i) => { const a = (2 * Math.PI * i) / cands.length - Math.PI / 2; n.x = W / 2 + Math.cos(a) * W * 0.36; n.y = H / 2 + Math.sin(a) * H * 0.36; n.fixed = false; });
+    terms.forEach((n, i) => { const a = (2 * Math.PI * i) / terms.length + 0.3; n.x = W / 2 + Math.cos(a) * W * 0.14; n.y = H / 2 + Math.sin(a) * H * 0.14; });
+    sim.temp = W / 6;
+  };
+  const sim = { temp: 0, edges: active() };
+  const PAD = 8, keepIn = (n) => { n.x = clamp(n.x, n.r + PAD, W - n.r - PAD); n.y = clamp(n.y, n.h / 2 + PAD, H - n.h / 2 - PAD); };
+  const collide = (passes) => {
+    for (let it = 0; it < passes; it++) {
+      let moved = false;
+      for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i], b = nodes[j], ox = a.r + b.r - Math.abs(a.x - b.x), oy = (a.h + b.h) / 2 + 2 - Math.abs(a.y - b.y);
+        if (ox <= 0 || oy <= 0) continue;
+        moved = true;
+        const wa = a.fixed ? 0 : b.fixed ? 1 : 0.5, wb = 1 - wa;
+        if (ox < oy) { const s = a.x < b.x ? -ox : ox; a.x += s * wa; b.x -= s * wb; } else { const s = a.y < b.y ? -oy : oy; a.y += s * wa; b.y -= s * wb; }
+      }
+      nodes.forEach(keepIn);
+      if (!moved) break;
+    }
+  };
+  const step = () => {
+    const dx = new Float64Array(nodes.length), dy = new Float64Array(nodes.length);
+    for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+      const ex = nodes[i].x - nodes[j].x, ey = nodes[i].y - nodes[j].y, d = Math.max(1, Math.hypot(ex, ey)), f = (k * k) / d;
+      dx[i] += (ex / d) * f; dy[i] += (ey / d) * f; dx[j] -= (ex / d) * f; dy[j] -= (ey / d) * f;
+    }
+    const lo = Math.min(...sim.edges.map((e) => e.w)), hi = Math.max(...sim.edges.map((e) => e.w));
+    for (const e of sim.edges) {
+      const i = at.get(e.s), j = at.get(e.t), ex = nodes[i].x - nodes[j].x, ey = nodes[i].y - nodes[j].y, d = Math.max(1, Math.hypot(ex, ey));
+      const f = ((d * d) / k) * (0.4 + (hi > lo ? (e.w - lo) / (hi - lo) : 1));
+      dx[i] -= (ex / d) * f; dy[i] -= (ey / d) * f; dx[j] += (ex / d) * f; dy[j] += (ey / d) * f;
+    }
+    nodes.forEach((n, i) => {
+      if (n.fixed) return;
+      dx[i] -= (n.x - W / 2) * 0.008 * k; dy[i] -= (n.y - H / 2) * 0.008 * k;
+      const d = Math.max(1, Math.hypot(dx[i], dy[i])), s = Math.min(d, sim.temp);
+      n.x += (dx[i] / d) * s; n.y += (dy[i] / d) * s; keepIn(n);
+    });
+    if (sim.temp < W / 15) collide(2);
+    sim.temp *= 0.985;
+  };
+  const settled = () => sim.temp < W / 1200;
+
+  // --- dessin
+  const edgeSvg = svg("svg", { class: "net-edges", viewBox: `0 0 ${W} ${H}`, width: W, height: H, "aria-hidden": "true" });
+  const hullSvg = prox ? svg("svg", { class: "net-hulls", viewBox: `0 0 ${W} ${H}`, width: W, height: H, "aria-hidden": "true" }) : null;
+  const maxE = Math.max(...edges.map((e) => e.w)), minE = Math.min(...edges.map((e) => e.w));
+  const thick = (w) => (prox ? 0.8 + ((w - minE) / (maxE - minE || 1)) * 4 : 0.8 + (w / maxE) * (directed ? 4 : 5)).toFixed(2);
+  const edgeEls = edges.map((e) => {
+    if (!directed) { const l = svg("line", { "stroke-width": thick(e.w) }); edgeSvg.append(l); return l; }
+    const g = svg("g", { class: "dir" }), p = svg("path", { "stroke-width": thick(e.w) }), head = svg("polygon", {});
+    g.style.color = blocColor(byId.get(e.s).key);
+    g.append(p, head); edgeSvg.append(g); return g;
+  });
+  const hulls = prox ? net.groups.map((keys, g) => {
+    const shape = svg("polygon", { fill: GROUP_COLOR[g % GROUP_COLOR.length], stroke: GROUP_COLOR[g % GROUP_COLOR.length] });
+    const label = svg("text", { class: "net-hull-label", "text-anchor": "middle" });
+    label.textContent = t("net_group", { n: g + 1 });
+    const wrapG = svg("g", { class: "hull" }); wrapG.append(shape); hullSvg.append(wrapG, label);
+    return { members: keys.map((k2) => byId.get("c:" + k2)), shape, label };
+  }) : [];
+  const draw = () => {
+    for (const n of nodes) { n.el.style.left = n.x.toFixed(1) + "px"; n.el.style.top = n.y.toFixed(1) + "px"; }
+    edges.forEach((e, i) => {
+      const a = byId.get(e.s), b = byId.get(e.t), node = edgeEls[i];
+      if (!directed) { node.setAttribute("x1", a.x.toFixed(1)); node.setAttribute("y1", a.y.toFixed(1)); node.setAttribute("x2", b.x.toFixed(1)); node.setAttribute("y2", b.y.toFixed(1)); return; }
+      // flèche courbe : les liens A→B et B→A s'écartent l'un de l'autre
+      const dx = b.x - a.x, dy = b.y - a.y, cx = (a.x + b.x) / 2 - dy * 0.16, cy = (a.y + b.y) / 2 + dx * 0.16;
+      const u = (x, y) => { const d = Math.hypot(x, y) || 1; return [x / d, y / d]; };
+      const [ux, uy] = u(b.x - cx, b.y - cy), [vx, vy] = u(cx - a.x, cy - a.y), hs = 7;
+      const tx = b.x - ux * (b.r + 1), ty = b.y - uy * (b.r + 1), sx = a.x + vx * (a.r - 2), sy = a.y + vy * (a.r - 2);
+      node.firstChild.setAttribute("d", `M${sx.toFixed(1)},${sy.toFixed(1)} Q${cx.toFixed(1)},${cy.toFixed(1)} ${(tx - ux * hs * 0.8).toFixed(1)},${(ty - uy * hs * 0.8).toFixed(1)}`);
+      node.lastChild.setAttribute("points", [[tx, ty], [tx - ux * hs * 1.6 - uy * hs * 0.7, ty - uy * hs * 1.6 + ux * hs * 0.7], [tx - ux * hs * 1.6 + uy * hs * 0.7, ty - uy * hs * 1.6 - ux * hs * 0.7]].map((p) => p.map((v) => v.toFixed(1)).join(",")).join(" "));
+    });
+    for (const h of hulls) {
+      const pts = convexHull(h.members.map((n) => [n.x, n.y]));
+      h.shape.setAttribute("points", pts.map((p) => p.map((v) => v.toFixed(1)).join(",")).join(" "));
+      h.shape.setAttribute("stroke-width", base + 22);
+      const top = h.members.reduce((m, n) => (n.y < m.y ? n : m));
+      h.label.setAttribute("x", (h.members.reduce((s, n) => s + n.x, 0) / h.members.length).toFixed(1));
+      h.label.setAttribute("y", Math.max(12, top.y - base / 2 - 14).toFixed(1));
+    }
+  };
+  const loop = () => {
+    if (!wrap.isConnected) { S.netFrame = 0; return; }
+    for (let i = 0; i < 5 && !settled(); i++) step();
+    if (settled()) collide(150);
+    draw();
+    S.netFrame = settled() ? 0 : requestAnimationFrame(loop);
+  };
+  const run = (heat) => {
+    sim.temp = Math.max(sim.temp, heat);
+    if (reducedMotion()) { while (!settled()) step(); collide(150); draw(); return; }
+    if (!S.netFrame) S.netFrame = requestAnimationFrame(loop);
+  };
+
+  // --- points
+  const layer = el("div", { class: "net-layer", style: `width:${W}px;height:${H}px` }, hullSvg, edgeSvg);
+  const wrap = el("div", { class: "net", style: `height:${H}px`, role: "group", "aria-label": t("net_aria") }, layer);
   const neighbours = (id) => edges.map((e, i) => [e, i]).filter(([e]) => e.s === id || e.t === id);
-  const els = new Map();
   const highlight = (id) => {
     wrap.classList.toggle("hovering", !!id);
-    for (const [nid, node] of els) node.classList.remove("hl");
-    lineOf.forEach((l) => l.classList.remove("hl"));
+    nodes.forEach((n) => n.el.classList.remove("hl"));
+    edgeEls.forEach((l) => l.classList.remove("hl"));
     if (!id) return;
-    els.get(id).classList.add("hl");
-    for (const [e, i] of neighbours(id)) { lineOf[i].classList.add("hl"); els.get(e.s === id ? e.t : e.s).classList.add("hl"); }
+    byId.get(id).el.classList.add("hl");
+    for (const [e, i] of neighbours(id)) { edgeEls[i].classList.add("hl"); byId.get(e.s === id ? e.t : e.s).el.classList.add("hl"); }
+  };
+  let suppressClick = false;
+  const tip = (n) => {
+    if (prox) return { title: n.label, rows: n.near.map(([k2, s]) => ({ value: pct(s, 0), label: candName(k2) })), note: t("net_tt_proximite", { g: n.group + 1, fam: blocLabel((S.cand.get(n.key) || {}).bloc) }) };
+    if (directed) {
+      const out = edges.filter((e) => e.s === n.id).sort((a, b) => b.w - a.w).slice(0, 4).map((e) => ({ value: num(e.w), label: "→ " + byId.get(e.t).label }));
+      const inc = edges.filter((e) => e.t === n.id).sort((a, b) => b.w - a.w).slice(0, 4).map((e) => ({ value: num(e.w), label: "← " + byId.get(e.s).label }));
+      return { title: n.label, rows: [...out, ...inc], note: t("net_tt_mentions", { n: num(n.w) }) };
+    }
+    const links = neighbours(n.id).map(([e]) => [e.s === n.id ? e.t : e.s, e.w]).sort((a, b) => b[1] - a[1]);
+    return { title: n.label, rows: links.slice(0, 6).map(([id, w]) => ({ value: num(w), label: byId.get(id).label })),
+      note: links.length > 6 ? t("net_more", { n: links.length - 6 }) : t(mode === "formules" ? "net_tt_formules" : "net_tt_themes") };
   };
   for (const n of nodes) {
-    const style = `left:${n.x.toFixed(1)}px;top:${n.y.toFixed(1)}px` + (n.type === "term" ? `;font-size:${n.font.toFixed(1)}px` : "");
-    const node = n.type === "cand"
-      ? el("button", { class: "net-node cand" + (S.focus === n.key ? " focus" : ""), type: "button", style, "aria-label": n.label, onclick: () => setFilter({ focus: S.focus === n.key ? "" : n.key }, "#reseau") }, avatar(n.key, n.size))
+    const style = n.type === "term" ? `font-size:${n.font.toFixed(1)}px` : `--ring:${blocColor(n.key)}`;
+    n.el = n.type === "cand"
+      ? el("button", { class: "net-node cand" + (S.focus === n.key ? " focus" : ""), type: "button", style, "aria-label": n.label,
+          onclick: () => { if (suppressClick) { suppressClick = false; return; } setFilter({ focus: S.focus === n.key ? "" : n.key }, "#reseau"); } }, avatar(n.key, n.size))
       : el("span", { class: "net-node term", style, title: n.title || null }, n.label);
-    els.set(n.id, node);
-    hoverable(node, () => {
-      const links = neighbours(n.id).map(([e]) => [e.s === n.id ? e.t : e.s, e.w]).sort((a, b) => b[1] - a[1]);
-      return { title: n.label, rows: links.slice(0, 6).map(([id, w]) => ({ value: num(w), label: at.get(id).label })),
-        note: links.length > 6 ? t("net_more", { n: links.length - 6 }) : t(S.netMode === "formules" ? "net_tt_formules" : "net_tt_themes") };
-    });
-    node.addEventListener("pointerenter", () => highlight(n.id));
-    node.addEventListener("focus", () => highlight(n.id));
-    node.addEventListener("pointerleave", () => highlight(null));
-    node.addEventListener("blur", () => highlight(null));
-    wrap.append(node);
+    n.el.addEventListener("dblclick", (e) => { e.preventDefault(); n.fixed = false; n.el.classList.remove("pinned"); run(W / 30); });
+    hoverable(n.el, () => tip(n));
+    n.el.addEventListener("pointerenter", () => highlight(n.id));
+    n.el.addEventListener("focus", () => highlight(n.id));
+    n.el.addEventListener("pointerleave", () => highlight(null));
+    n.el.addEventListener("blur", () => highlight(null));
+    layer.append(n.el);
   }
-  if (S.netUrl) URL.revokeObjectURL(S.netUrl);
-  S.netUrl = URL.createObjectURL(new Blob([gexf(nodes, edges, S.netMode)], { type: "application/gexf+xml" }));
-  box.append(wrap, el("div", { class: "btn-row" },
-    el("a", { class: "ghost-btn", href: S.netUrl, download: `reseau-${S.netMode}-${S.data.generated_at.slice(0, 10)}.gexf` }, t("net_download"))),
-    el("p", { class: "note-small", text: t(S.netMode === "formules" ? "net_note_formules" : "net_note_themes") }));
-  setTable("reseau", [{ label: t("net_th_from") }, { label: t("net_th_to") }, { label: t("th_tweets"), num: true }],
-    [...edges].sort((a, b) => b.w - a.w).map((e) => [at.get(e.s).label, at.get(e.t).label, num(e.w)]));
+  const dim = () => {
+    const live = new Set(sim.edges.flatMap((e) => [e.s, e.t]));
+    nodes.forEach((n) => n.el.classList.toggle("dim", !live.has(n.id)));
+    edges.forEach((e, i) => edgeEls[i].classList.toggle("off", e.w < weights[minIdx]));
+  };
+
+  // --- zoom et déplacement
+  const view = { k: 1, x: 0, y: 0 };
+  const applyView = () => {
+    view.x = clamp(view.x, W - W * view.k, 0); view.y = clamp(view.y, H - H * view.k, 0);
+    layer.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.k})`;
+    wrap.classList.toggle("zoomed", view.k > 1.01);
+  };
+  const zoomAt = (f, px = W / 2, py = H / 2) => {
+    const k2 = clamp(view.k * f, 1, 4);
+    view.x = px - ((px - view.x) * k2) / view.k; view.y = py - ((py - view.y) * k2) / view.k; view.k = k2; applyView();
+  };
+  let drag = null;
+  wrap.addEventListener("pointerdown", (e) => {
+    suppressClick = false;
+    if (e.button > 0 || e.target.closest(".net-tools")) return;
+    const target = e.target.closest(".net-node");
+    if (target) { drag = { n: nodes.find((n) => n.el === target), id: e.pointerId, sx: e.clientX, sy: e.clientY, moved: false }; target.setPointerCapture(e.pointerId); }
+    else if (e.pointerType === "mouse" || view.k > 1.01) { drag = { pan: true, id: e.pointerId, sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y, moved: false }; wrap.setPointerCapture(e.pointerId); }
+  });
+  wrap.addEventListener("pointermove", (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
+    if (!drag.moved && Math.hypot(dx, dy) < 4) return;
+    if (!drag.moved) { drag.moved = true; hideTip(); wrap.classList.add("dragging"); }
+    if (drag.pan) { view.x = drag.vx + dx; view.y = drag.vy + dy; applyView(); return; }
+    const r = wrap.getBoundingClientRect(), n = drag.n;
+    n.fixed = true; n.el.classList.add("pinned");
+    n.x = (e.clientX - r.left - view.x) / view.k; n.y = (e.clientY - r.top - view.y) / view.k; keepIn(n);
+    if (reducedMotion()) draw(); else run(W / 45);
+  });
+  const end = (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    if (drag.moved && drag.n) suppressClick = true;
+    wrap.classList.remove("dragging"); drag = null;
+  };
+  wrap.addEventListener("pointerup", end);
+  wrap.addEventListener("pointercancel", end);
+  wrap.addEventListener("wheel", (e) => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    const r = wrap.getBoundingClientRect();
+    zoomAt(Math.exp(-e.deltaY * 0.0025), e.clientX - r.left, e.clientY - r.top);
+  }, { passive: false });
+  const tool = (label, text, onclick) => el("button", { type: "button", class: "net-tool", "aria-label": label, title: label, text, onclick });
+  const tools = (el("div", { class: "net-tools" },
+    tool(t("net_zoom_in"), "+", () => zoomAt(1.4)), tool(t("net_zoom_out"), "−", () => zoomAt(1 / 1.4)),
+    tool(t("net_fit"), "⤢", () => { view.k = 1; view.x = 0; view.y = 0; applyView(); }),
+    tool(t("net_relayout"), "↻", () => { nodes.forEach((n) => n.el.classList.remove("pinned")); start(); run(0); })));
+
+  // --- seuil des liens
+  const fmtW = (w) => (prox ? pct(w, 0) : num(w));
+  const value = el("output", { class: "net-min-val", text: fmtW(weights[minIdx]) });
+  const range = el("input", { type: "range", min: 0, max: maxIdx, step: 1, value: minIdx, "aria-label": t(prox ? "net_min_sim" : "net_min_n") });
+  range.addEventListener("input", () => {
+    minIdx = Number(range.value); S.netMin[mode] = weights[minIdx]; value.textContent = fmtW(weights[minIdx]);
+    sim.edges = active(); dim(); run(W / 14);
+  });
+  const bar = el("div", { class: "net-bar" },
+    maxIdx > 0 ? el("label", { class: "net-min" }, el("span", { text: t(prox ? "net_min_sim" : "net_min_n") }), range, value) : el("span"), tools);
+
+  // --- légende
+  const blocsHere = [...new Set(nodes.filter((n) => n.type === "cand").map((n) => (S.cand.get(n.key) || {}).bloc))]
+    .sort((a, b) => (S.data.study.blocs || []).findIndex((x) => x.key === a) - (S.data.study.blocs || []).findIndex((x) => x.key === b));
+  const legend = el("div", { class: "legend net-legend" }, el("span", { class: "legend-title", text: t("net_legend_family") }),
+    blocsHere.map((b) => el("span", { class: "key" }, el("span", { class: "ring-dot", style: `--ring:${BLOC_COLOR[b] || "#8a8a84"}` }), blocLabel(b))),
+    directed ? el("span", { class: "key", text: t("net_legend_arrow") }) : null);
+  const groupsBox = prox ? el("div", { class: "net-groups" },
+    el("p", { class: "net-groups-sum", text: t("net_groups", { k: net.groups.length, q: FMT.sig2.format(net.q), p: pct(net.agree, 0) }) }),
+    el("ul", {}, net.groups.map((keys, g) => el("li", {},
+      el("span", { class: "swatch", style: `background:${GROUP_COLOR[g % GROUP_COLOR.length]}` }), el("b", { text: t("net_group", { n: g + 1 }) + " · " }),
+      keys.map((k2, i) => el("span", { class: "grp-member" }, el("span", { class: "ring-dot", style: `--ring:${blocColor(k2)}` }), shortName(candName(k2)) + (i < keys.length - 1 ? ", " : ""))))))) : null;
+
+  const dl = el("a", { class: "ghost-btn", href: "#", download: `reseau-${mode}-${S.data.generated_at.slice(0, 10)}.gexf` }, t("net_download"));
+  dl.addEventListener("click", () => {
+    if (S.netUrl) URL.revokeObjectURL(S.netUrl);
+    S.netUrl = URL.createObjectURL(new Blob([gexf(net, mode)], { type: "application/gexf+xml" }));
+    dl.href = S.netUrl;
+  });
+  box.append(bar, wrap, el("p", { class: "note-small net-hint", text: t("net_hint") }), legend, groupsBox, el("div", { class: "btn-row" }, dl), el("p", { class: "note-small", text: t("net_note_" + mode, { n: PROX_MIN }) }));
+
+  start();
+  dim();
+  applyView();
+  draw();
+  run(0);
+
+  const head = prox ? [t("net_th_from"), t("net_th_near"), t("similarity")] : directed ? [t("net_th_from"), t("net_th_named"), t("th_tweets")] : [t("net_th_from"), t("net_th_to"), t("th_tweets")];
+  setTable("reseau", head.map((label, i) => ({ label, num: i === 2 })),
+    [...edges].sort((a, b) => b.w - a.w).map((e) => [byId.get(e.s).label, byId.get(e.t).label, fmtW(e.w)]));
 }
 
 /* =================================================================== onglet Mots */
@@ -1187,7 +1492,9 @@ function renderMots(panel) {
     renderHeat(heat, "formules", rows, used.map((f) => ({ key: f.key, label: LANG === "en" && f.en ? f.en : f.label.replace(/[«»]/g, "").trim(), title: f.label })), { format: (v) => num(v), min0: "0", unit: t("uses") });
   }
   const net = card("reseau", t("net_title"), "reseau", t("net_sub"),
-    el("div", { class: "controls" }, segCtrl([["formules", t("net_formules")], ["themes", t("net_themes")]], S.netMode, (k) => { S.netMode = k; render(); }, t("net_mode"))),
+    el("div", { class: "controls" },
+      segCtrl([["formules", t("net_formules")], ["themes", t("net_themes")], ["proximite", t("net_proximite")], ["mentions", t("net_mentions")]], S.netMode, (k) => { S.netMode = k; render(); }, t("net_mode")),
+      S.netMode === "mentions" ? segCtrl([["tous", t("net_scope_all")], ["eco", t("net_scope_eco")]], S.netScope, (k) => { S.netScope = k; render(); }, t("net_scope")) : null),
     el("div", { class: "chart" }));
   panel.append(net);
   renderNetwork(net.querySelector(".chart"));
@@ -1807,8 +2114,8 @@ function langSwitch() {
 function heroFaces() {
   const order = (S.data.study.blocs || []).map((b) => b.key);
   const list = S.cands.filter((c) => c.enabled).sort((a, b) => order.indexOf(a.bloc) - order.indexOf(b.bloc) || byName(a, b));
-  return el("div", { class: "faces hero-extra", role: "group", "aria-label": t("faces_aria") }, list.map((c) => {
-    const b = el("button", { class: "face", type: "button", title: c.name, "aria-label": t("face_label", { name: c.name }), onclick: () => focusCandidate(c.key) });
+  return el("div", { class: "faces hero-extra", role: "group", "aria-label": t("faces_aria") }, list.map((c, i) => {
+    const b = el("button", { class: "face", type: "button", style: `--k:${i}`, title: c.name, "aria-label": t("face_label", { name: c.name }), onclick: () => focusCandidate(c.key) });
     if (c.photo && c.photo.url) {
       const img = el("img", { src: c.photo.url, alt: "", decoding: "async", referrerpolicy: "no-referrer" });
       img.addEventListener("error", () => b.replaceChildren(el("span", { class: "ini", text: initials(c.name) })));
@@ -1950,7 +2257,12 @@ function render() {
   renderFilters();
   for (const p of $$("[data-panel]")) p.hidden = p.dataset.panel !== S.tab;
   document.documentElement.style.scrollPaddingTop = $("#sticky").offsetHeight + 16 + "px";
-  RENDER[S.tab]($(`[data-panel="${S.tab}"]`));
+  // Entrée d'onglet : cartes qui montent, barres qui poussent, chiffres qui défilent (une fois par onglet)
+  const panel = $(`[data-panel="${S.tab}"]`), entering = S.lastTab !== S.tab;
+  S.lastTab = S.tab;
+  if (entering) { panel.classList.add("enter"); clearTimeout(S.enterTimer); S.enterTimer = setTimeout(() => panel.classList.remove("enter"), 1400); }
+  RENDER[S.tab](panel);
+  if (entering && !reducedMotion()) $$(".kpi .value", panel).forEach((n) => countUp(n));
   const target = S.scrollTo, focus = S.focusTo;
   S.scrollTo = null; S.focusTo = null;
   if (target === "top") scrollTo({ top: 0 });

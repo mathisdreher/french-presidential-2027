@@ -19,7 +19,7 @@ from typing import Optional
 
 from . import codebook as cb
 from . import codebook_en as en
-from . import config, games, lexique, photos
+from . import config, games, lexique, photos, reseau
 from .fetch import account_status, age_at_fetch
 from .jev_client import level, tweet_level
 from .storage import load_json, read_jsonl
@@ -122,7 +122,15 @@ def payload(raw_path: Path | None = None, cls_path: Path | None = None, validati
     measures = load_json(metrics_path or config.METRICS_FILE, {})
 
     # Engagement : mesure de référence à 48 h si elle existe, sinon chiffres relevés à la collecte (ma vide)
-    cols = ["i", "c", "d", "e", "p", "s", "l", "rt", "rp", "qt", "bm", "vw", "ma", "cj", *COLUMNS.values()]
+    # nm : indices des autres candidats nommés dans le tweet (réseau « qui nomme qui »), vide si aucun
+    # fm : indices (dans lexique.formules) des formules du débat employées dans le tweet, pour suivre les filtres du site
+    cols = ["i", "c", "d", "e", "p", "s", "l", "rt", "rp", "qt", "bm", "vw", "ma", "cj", "nm", "fm", *COLUMNS.values()]
+    named = reseau.matcher(candidates)
+    formules = lexique.load_formules()
+
+    def used(text: str) -> list[int] | None:
+        folded = lexique.fold(text or "")
+        return [i for i, f in enumerate(formules) if f["regex"].search(folded)] or None
     out_rows, texts, last_day, eco_ids, refreshed = [], {}, {}, set(), {}
     for t in raw:
         slug = t["handle"].lower()
@@ -143,7 +151,7 @@ def payload(raw_path: Path | None = None, cls_path: Path | None = None, validati
         row = [t["id"], index[slug], day, 1 if eco else 0, None if p is None else round(p, 3),
                (r.get("final_source") or "j")[:1], src.get("likes") or 0, src.get("retweets") or 0, src.get("replies") or 0,
                src.get("quotes") or 0, src.get("bookmarks") or 0, src.get("impressions"), None if mature is None else round(mature),
-               tweet_level(r["jev"]) if r.get("jev") else None]
+               tweet_level(r["jev"]) if r.get("jev") else None, named(t.get("text", ""), slug) or None, used(t.get("text", ""))]
         if m.get("maj") and not m["maj"].get("absent"):
             refreshed[t["id"]] = [m["maj"]["at"][:10], m["maj"].get("likes"), m["maj"].get("impressions")]
         row += [_encode(cb.VARIABLE_BY_KEY[k], r.get(k)) for k in COLUMNS]

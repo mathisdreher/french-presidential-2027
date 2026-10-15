@@ -232,16 +232,21 @@ FRAMEWORKS: tuple[Framework, ...] = (
              "https://doi.org/10.1080/1369118X.2016.1198411")),
     ),
     Framework(
-        "reseau", "Le réseau des mots du débat", "Analyse de réseaux ; Mathieu Jacomy et coauteurs (Gephi)",
-        "Un réseau relie les candidats aux formules ou aux thèmes qu'ils emploient. Deux candidats proches dans le "
-        "dessin partagent des expressions ou des sujets ; une formule placée au centre circule entre les camps, une "
-        "formule en périphérie reste l'apanage de quelques-uns. La position des points n'a pas d'unité : seules "
-        "comptent les proximités.",
-        "Version légère, calculée dans votre navigateur par une disposition à ressorts proche de ForceAtlas2, "
-        "l'algorithme de Gephi. L'épaisseur d'un lien est le nombre de tweets. Le fichier .gexf s'ouvre dans Gephi "
-        "pour une analyse complète.",
+        "reseau", "Le réseau du débat", "Analyse de réseaux ; Mathieu Jacomy et coauteurs (Gephi), Vincent Blondel et coauteurs",
+        "Quatre réseaux relient les candidats : aux formules qu'ils emploient, aux thèmes qu'ils abordent, entre eux selon "
+        "la ressemblance de leurs discours écologiques, et entre eux selon qui nomme qui. Deux points proches dans le dessin "
+        "partagent des expressions, des sujets ou une manière de parler ; une formule placée au centre circule entre les "
+        "camps. La position des points n'a pas d'unité : seules comptent les proximités.",
+        "Calculé dans votre navigateur par une disposition à ressorts proche de ForceAtlas2, l'algorithme de Gephi. "
+        "Proximité : chaque candidat a un profil (part de ses tweets écologie dans chaque catégorie des thèmes, de la "
+        "position, du cadrage, de la vision, du retardement, de l'adversaire et des topoï, chaque variable pesant autant) ; "
+        "il est relié aux trois profils les plus proches (similarité cosinus), et les groupes sont détectés par la méthode "
+        "de Louvain. Qui nomme qui : un lien va de l'auteur d'un tweet à chaque autre candidat dont le @compte ou le nom y "
+        "figure. Le fichier .gexf s'ouvre dans Gephi pour une analyse complète.",
         (Ref("Jacomy, M., Venturini, T., Heymann, S. et Bastian, M. (2014). ForceAtlas2, a continuous graph layout algorithm for handy network visualization designed for the Gephi software. PLoS ONE, 9(6), e98853.",
-             "https://doi.org/10.1371/journal.pone.0098853"),),
+             "https://doi.org/10.1371/journal.pone.0098853"),
+         Ref("Blondel, V. D., Guillaume, J.-L., Lambiotte, R. et Lefebvre, E. (2008). Fast unfolding of communities in large networks. Journal of Statistical Mechanics, P10008.",
+             "https://doi.org/10.1088/1742-5468/2008/10/P10008"),),
     ),
     Framework(
         "lexique", "Lexicométrie", "Ludovic Lebart, André Salem, Ted Dunning",
