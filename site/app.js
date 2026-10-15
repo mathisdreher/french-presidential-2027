@@ -1046,7 +1046,7 @@ const blocColor = (k) => BLOC_COLOR[(S.cand.get(k) || {}).bloc] || "#8a8a84";
 const GROUP_COLOR = ["#e69f00", "#56b4e9", "#009e73", "#cc79a7", "#0072b2", "#d55e00", "#8a8a84"];
 // Profil de discours : part des tweets écologie dans chaque catégorie de ces variables, chaque variable pesant autant
 const PROX_VARS = ["themes", "position", "cadrage", "vision", "retardement", "adversaire", "topoi"];
-const PROX_MIN = 8, PROX_K = 3;
+const PROX_MIN = 8, PROX_K = 3, RES_MIN = 0.5, RES_MAX = 3;
 
 function proxProfiles() {
   const out = [];
@@ -1067,7 +1067,8 @@ function proxProfiles() {
   return out.sort((a, b) => byBloc(a.key, b.key));
 }
 // Détection de communautés par la méthode de Louvain (Blondel et coauteurs, 2008), graphe pondéré non orienté
-function louvain(n, links) {
+// gamma : résolution ; au-dessus de 1, des groupes plus nombreux et plus petits
+function louvain(n, links, gamma = 1) {
   let part = Array.from({ length: n }, (_, i) => i);
   let adj = Array.from({ length: n }, () => new Map());
   for (const { a, b, w } of links) { adj[a].set(b, (adj[a].get(b) || 0) + w); adj[b].set(a, (adj[b].get(a) || 0) + w); }
@@ -1082,8 +1083,8 @@ function louvain(n, links) {
         const ci = com[i], wTo = new Map();
         for (const [j, w] of adj[i]) if (j !== i) wTo.set(com[j], (wTo.get(com[j]) || 0) + w);
         tot[ci] -= k[i];
-        let best = ci, gain = (wTo.get(ci) || 0) - (tot[ci] * k[i]) / m2;
-        for (const [c, w] of wTo) { const g = w - (tot[c] * k[i]) / m2; if (g > gain + 1e-12) { gain = g; best = c; } }
+        let best = ci, gain = (wTo.get(ci) || 0) - (gamma * tot[ci] * k[i]) / m2;
+        for (const [c, w] of wTo) { const g = w - (gamma * tot[c] * k[i]) / m2; if (g > gain + 1e-12) { gain = g; best = c; } }
         tot[best] += k[i];
         if (best !== ci) { com[i] = best; moved = true; any = true; }
       }
@@ -1161,7 +1162,11 @@ function networkData(mode) {
   P.forEach((_, i) => P.map((__, j) => j).filter((j) => j !== i).sort((x, y) => sim[i][y] - sim[i][x]).slice(0, PROX_K)
     .forEach((j) => pairs.set(Math.min(i, j) + "-" + Math.max(i, j), sim[i][j])));
   const links = [...pairs].map(([id, w]) => { const [a, b] = id.split("-").map(Number); return { a, b, w }; });
-  const raw = louvain(P.length, links);
+  // résolution choisie au curseur, sinon la plus basse qui donne au moins trois groupes
+  const count = (g) => new Set(louvain(P.length, links, g)).size;
+  let res = S.netRes;
+  if (res === null || res === undefined) { res = 1; while (res < RES_MAX && count(res) < 3) res = Math.round((res + 0.1) * 10) / 10; }
+  const raw = louvain(P.length, links, res);
   // groupes numérotés du plus grand au plus petit
   const sizes = new Map();
   raw.forEach((g) => sizes.set(g, (sizes.get(g) || 0) + 1));
@@ -1172,7 +1177,7 @@ function networkData(mode) {
   const groups = order.map((_, g) => P.filter((__, i) => part[i] === g).map((p) => p.key));
   // accord avec les familles : part des candidats qui appartiennent à la famille majoritaire de leur groupe
   const agree = groups.reduce((s, keys) => { const c = new Map(); keys.forEach((k) => { const b = (S.cand.get(k) || {}).bloc; c.set(b, (c.get(b) || 0) + 1); }); return s + Math.max(...c.values()); }, 0) / P.length;
-  return done({ groups, q: modularity(P.length, links, part), agree });
+  return done({ groups, q: modularity(P.length, links, part), agree, res });
 }
 
 function convexHull(pts) {
@@ -1230,6 +1235,14 @@ function renderNetwork(box) {
   // --- simulation : Fruchterman et Reingold, avec écartement des étiquettes à chaque pas
   const k = Math.sqrt((W * H) / Math.max(nodes.length, 1)) * 0.8;
   const start = () => {
+    const saved = S.netKeep && S.netPos && S.netPos.mode === mode && S.netPos.W === W ? S.netPos.at : null;
+    S.netKeep = false;
+    if (saved && nodes.every((n) => saved.has(n.id))) {
+      nodes.forEach((n) => Object.assign(n, saved.get(n.id)));
+      if (nodes.some((n) => n.fixed)) requestAnimationFrame(() => nodes.forEach((n) => n.fixed && n.el.classList.add("pinned")));
+      sim.temp = W / 900;
+      return;
+    }
     const cands = nodes.filter((n) => n.type === "cand").sort((a, b) => byBloc(a.key, b.key)), terms = nodes.filter((n) => n.type === "term");
     cands.forEach((n, i) => { const a = (2 * Math.PI * i) / cands.length - Math.PI / 2; n.x = W / 2 + Math.cos(a) * W * 0.36; n.y = H / 2 + Math.sin(a) * H * 0.36; n.fixed = false; });
     terms.forEach((n, i) => { const a = (2 * Math.PI * i) / terms.length + 0.3; n.x = W / 2 + Math.cos(a) * W * 0.14; n.y = H / 2 + Math.sin(a) * H * 0.14; });
@@ -1294,6 +1307,7 @@ function renderNetwork(box) {
   }) : [];
   const draw = () => {
     for (const n of nodes) { n.el.style.left = n.x.toFixed(1) + "px"; n.el.style.top = n.y.toFixed(1) + "px"; }
+    S.netPos = { mode, W, at: new Map(nodes.map((n) => [n.id, { x: n.x, y: n.y, fixed: n.fixed }])) };
     edges.forEach((e, i) => {
       const a = byId.get(e.s), b = byId.get(e.t), node = edgeEls[i];
       if (!directed) { node.setAttribute("x1", a.x.toFixed(1)); node.setAttribute("y1", a.y.toFixed(1)); node.setAttribute("x2", b.x.toFixed(1)); node.setAttribute("y2", b.y.toFixed(1)); return; }
@@ -1428,8 +1442,16 @@ function renderNetwork(box) {
     minIdx = Number(range.value); S.netMin[mode] = weights[minIdx]; value.textContent = fmtW(weights[minIdx]);
     sim.edges = active(); dim(); run(W / 14);
   });
+  // découpage des groupes en direct : la résolution de Louvain, les points restent en place
+  const resCtl = prox ? (() => {
+    const out = el("output", { class: "net-min-val", text: t("net_groups_n", { k: net.groups.length }) });
+    const r = el("input", { type: "range", min: RES_MIN, max: RES_MAX, step: 0.1, value: net.res, "aria-label": t("net_res") });
+    r.addEventListener("change", () => { S.netRes = Number(r.value); S.netKeep = true; render(); });
+    r.addEventListener("input", () => { out.textContent = "…"; });
+    return el("label", { class: "net-min" }, el("span", { text: t("net_res") }), r, out);
+  })() : null;
   const bar = el("div", { class: "net-bar" },
-    maxIdx > 0 ? el("label", { class: "net-min" }, el("span", { text: t(prox ? "net_min_sim" : "net_min_n") }), range, value) : el("span"), tools);
+    el("div", { class: "net-ctls" }, maxIdx > 0 ? el("label", { class: "net-min" }, el("span", { text: t(prox ? "net_min_sim" : "net_min_n") }), range, value) : null, resCtl), tools);
 
   // --- légende
   const blocsHere = [...new Set(nodes.filter((n) => n.type === "cand").map((n) => (S.cand.get(n.key) || {}).bloc))]
