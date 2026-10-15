@@ -1750,10 +1750,15 @@ function newGame(key, daily = false) {
   if (key === "qui") {
     const pool = [...new Set(S.games.items.map((it) => it.c))].sort();
     return { key, daily, i: 0, rounds: pickSpread(items, g.rounds, rnd).map((it) => {
-      const bloc = (S.cand.get(it.c) || {}).bloc;
-      const same = mix(pool.filter((k) => k !== it.c && (S.cand.get(k) || {}).bloc === bloc)).slice(0, 1);
-      const other = mix(pool.filter((k) => k !== it.c && !same.includes(k))).slice(0, 3 - same.length);
-      return { it, options: mix([it.c, ...same, ...other]), pick: null, hint: false };
+      // le bon auteur, un candidat de sa famille, et un candidat de chacune de deux autres familles
+      const blocOf = (k) => (S.cand.get(k) || {}).bloc, bloc = blocOf(it.c);
+      const same = mix(pool.filter((k) => k !== it.c && blocOf(k) === bloc)).slice(0, 1);
+      const families = mix([...new Set(pool.map(blocOf))].filter((b) => b !== bloc));
+      const other = families.slice(0, 3 - same.length).map((b) => mix(pool.filter((k) => blocOf(k) === b))[0]);
+      // famille unique ou trop peu de familles : compléter avec n'importe quel autre candidat
+      const rest = mix(pool.filter((k) => k !== it.c && !same.includes(k) && !other.includes(k)));
+      const opts = [it.c, ...same, ...other, ...rest].slice(0, 4);
+      return { it, options: mix(opts), pick: null, hint: false };
     }) };
   }
   if (key === "agent") {
@@ -1899,9 +1904,12 @@ function renderQui(box, P) {
   const round = P.rounds[P.i];
   if (!round) {
     const n = P.rounds.length, score = P.rounds.reduce((a, r) => a + quiPoints(r), 0), best = Math.max(...P.rounds.map((r, i) => quiStreak({ rounds: P.rounds.slice(0, i + 1) })));
-    box.append(gameTop(P), endCard({ key: "qui", big: `${num(score)}/${n}`, label: t("qui_end_label"), tierText: tier(n ? score / n : 0),
-      text: t("qui_end_p"), extra: best >= 2 ? el("p", { class: "end-label", text: t("best_streak", { n: best }) }) : null,
-      share: t(P.daily ? "share_qui_daily" : "share_qui", { score: num(score), n, date: fmtShort(today()) }) }),
+    // le grand chiffre compte les auteurs exacts ; les demi-points (bonne famille) apparaissent à part, dans le score
+    const found = P.rounds.filter((r) => r.pick === r.it.c).length, family = P.rounds.filter((r) => r.pick !== null && r.pick !== r.it.c && sameBloc(r.pick, r.it.c)).length;
+    box.append(gameTop(P), endCard({ key: "qui", big: `${found}/${n}`, label: t("qui_end_label"), tierText: tier(n ? score / n : 0),
+      text: t("qui_end_p"), extra: el("div", {}, el("p", { class: "end-label", text: t("qui_end_detail", { family, score: num(score), n }) }),
+        best >= 2 ? el("p", { class: "end-label", text: t("best_streak", { n: best }) }) : null),
+      share: t(P.daily ? "share_qui_daily" : "share_qui", { score: found, n, date: fmtShort(today()) }) }),
       recapCard(P.rounds.map((r) => ({ c: r.it.c, text: itemText(r.it), res: r.pick === r.it.c ? "ok" : sameBloc(r.pick, r.it.c) ? "half" : "ko", label: num(quiPoints(r)) }))),
       theoriesCard(["carre", "cadrage", "topoi", "procedes", "visions", "retardement"]));
     return;
