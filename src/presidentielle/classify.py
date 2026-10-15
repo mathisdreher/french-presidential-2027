@@ -2,9 +2,14 @@
 
 Moteurs :
   - jev     : modèle de décision Jev (TypeSafe), un appel par tweet, probabilités calibrées.
-  - claude  : Claude en sortie structurée (mêmes variables + champs textuels).
-  - hybrid  : Jev sur tous les tweets, puis Claude sur les tweets écologie et sur les
-              décisions Jev peu sûres (routage par confiance). Par défaut.
+              Moteur par défaut, exécuté chaque jour sur tous les nouveaux tweets.
+  - claude  : Claude en sortie structurée (mêmes variables + champs textuels), déclenché à la
+              demande sur une portée choisie :
+                incertains              décisions Jev peu sûres
+                ecologie_et_incertains  tweets écologie (lexique, implicites) + incertains
+                echantillon             échantillon de validation (double codage Jev/Claude)
+                tous                    tous les tweets non encore codés par Claude
+  - hybrid  : Jev puis Claude sur ecologie_et_incertains, en une commande.
 
 Modes Claude : sync (appels immédiats) ou batch (API Batches, -50 %).
 Les résultats sont ajoutés à data/classified/classifications.jsonl ; un tweet déjà
@@ -32,6 +37,7 @@ from .storage import append_jsonl, load_json, read_jsonl, save_json
 log = logging.getLogger(__name__)
 
 MAX_TOKENS = 2048
+FLUSH_EVERY = 200  # écriture intermédiaire pendant les longs rattrapages
 EFFORT = "low"  # grille de codage courte : effort bas suffit et réduit le coût
 CATEGORICAL = ("parle_ecologie", "niveau", "themes", "position", "cadrage", "polarisation", "adversaire",
                "victime", "acte_discursif", "registre", "chiffres", "reactivite", "autorite")
@@ -51,20 +57,117 @@ def load_rows() -> dict[str, dict]:
     return rows
 
 
-def pending_tweets(engine: str, limit: Optional[int] = None, candidate: Optional[str] = None) -> list[dict]:
+CLAUDE_SCOPES = ("incertains", "ecologie_et_incertains", "echantillon", "tous")
+
+
+def _match_candidate(tweet: dict, candidate: Optional[str]) -> bool:
+    return not candidate or candidate.lower().lstrip("@") in (tweet["handle"].lower(), tweet["candidate"].lower())
+
+
+def pending_tweets(engine: str = "jev", limit: Optional[int] = None, candidate: Optional[str] = None) -> list[dict]:
+    """Tweets sans codage du moteur demandé (pour hybrid : sans codage Jev)."""
+    key = "claude" if engine == "claude" else "jev"
     rows = load_rows()
     out = []
     for tweet in read_jsonl(config.RAW_TWEETS_FILE):
-        row = rows.get(tweet["id"])
-        if row and engine in row and row[engine]:
+        if (rows.get(tweet["id"]) or {}).get(key):
             continue
-        if row and engine == "hybrid" and row.get("jev") and (row.get("claude") or not row.get("needs_claude")):
-            continue
-        if candidate and candidate.lower() not in (tweet["handle"].lower(), tweet["candidate"].lower()):
+        if not _match_candidate(tweet, candidate):
             continue
         out.append(tweet)
         if limit and len(out) >= limit:
             break
+    return out
+
+
+def ensure_validation_sample(size: int = 300, seed: int = 2027, ecology_share: float = 0.25) -> list[str]:
+    """Échantillon de validation persistant (data/state/validation_sample.json).
+
+    Strate « aleatoire » : tirage aléatoire stratifié par candidat (allocation égale) parmi les
+    tweets codés par Jev. Strate « ecologie » : sur-échantillon de tweets classés écologie par Jev,
+    pour disposer d'assez de cas sur les variables propres à l'écologie (position, cadrage).
+    L'échantillon n'est jamais retiré : un appel avec une taille plus grande le complète.
+    """
+    import random
+
+    state = load_json(config.VALIDATION_SAMPLE_FILE, {"seed": seed, "items": []})
+    items: list[dict] = state.get("items", [])
+    if len(items) >= size:
+        return [it["id"] for it in items]
+
+    rows = load_rows()
+    rng = random.Random(f"{state.get('seed', seed)}-{len(items)}")
+    taken = {it["id"] for it in items}
+    pool_by_cand: dict[str, list[str]] = {}
+    eco_pool: list[str] = []
+    for tweet in read_jsonl(config.RAW_TWEETS_FILE):
+        row = rows.get(tweet["id"]) or {}
+        if not row.get("jev") or tweet["id"] in taken:
+            continue
+        pool_by_cand.setdefault(tweet["handle"].lower(), []).append(tweet["id"])
+        if row["jev"]["values"].get("parle_ecologie"):
+            eco_pool.append(tweet["id"])
+
+    missing = size - len(items)
+    n_eco = round(missing * ecology_share)
+    n_main = missing - n_eco
+
+    main: list[str] = []
+    cands = sorted(pool_by_cand)
+    for pool in pool_by_cand.values():
+        rng.shuffle(pool)
+
+    def draw(target: int) -> None:
+        while len(main) < target and any(pool_by_cand[c] for c in cands):
+            for c in cands:
+                if pool_by_cand[c] and len(main) < target:
+                    main.append(pool_by_cand[c].pop())
+
+    draw(n_main)
+    chosen = set(main)
+    eco_left = [i for i in eco_pool if i not in chosen]
+    rng.shuffle(eco_left)
+    eco = eco_left[:n_eco]
+    if len(eco) < n_eco:  # pas assez de tweets écologie : compléter par la strate aléatoire
+        for c in cands:
+            pool_by_cand[c] = [i for i in pool_by_cand[c] if i not in set(eco)]
+        draw(n_main + n_eco - len(eco))
+
+    if not main and not eco:
+        return [it["id"] for it in items]
+    items += [{"id": i, "strate": "aleatoire"} for i in main] + [{"id": i, "strate": "ecologie"} for i in eco]
+    state.update({"seed": state.get("seed", seed), "items": items, "updated_at": _now()})
+    save_json(config.VALIDATION_SAMPLE_FILE, state)
+    log.info("Échantillon de validation : %d tweets (%d aléatoires, %d sur-échantillon écologie)",
+             len(items), sum(it["strate"] == "aleatoire" for it in items), sum(it["strate"] == "ecologie" for it in items))
+    return [it["id"] for it in items]
+
+
+def claude_targets(scope: str, *, limit: Optional[int] = None, candidate: Optional[str] = None,
+                   sample_size: int = 300) -> list[dict]:
+    """Tweets à envoyer à Claude selon la portée choisie (jamais deux fois le même)."""
+    if scope not in CLAUDE_SCOPES:
+        raise ValueError(f"Portée inconnue : {scope} (attendu : {', '.join(CLAUDE_SCOPES)})")
+    rows = load_rows()
+    sample = set(ensure_validation_sample(sample_size)) if scope == "echantillon" else set()
+    out = []
+    for tweet in read_jsonl(config.RAW_TWEETS_FILE):
+        row = rows.get(tweet["id"]) or {}
+        if row.get("claude") or not _match_candidate(tweet, candidate):
+            continue
+        jev = row.get("jev")
+        if scope == "incertains":
+            keep = bool(row.get("needs_claude"))
+        elif scope == "ecologie_et_incertains":
+            keep = bool(jev) and (jev["values"]["parle_ecologie"] or bool(row.get("needs_claude")))
+        elif scope == "echantillon":
+            keep = tweet["id"] in sample
+        else:
+            keep = True
+        if keep:
+            out.append(tweet)
+            if limit and len(out) >= limit:
+                break
     return out
 
 
@@ -142,7 +245,9 @@ def classify_jev(tweets: list[dict], *, workers: int = 4, model: Optional[str] =
             result["classified_at"] = _now()
             updated.append(merge(tweet["id"], result, None, rows.get(tweet["id"])))
             done += 1
-            if done % 50 == 0:
+            if done % FLUSH_EVERY == 0:
+                _write(rows, updated)
+                updated = []
                 log.info("[Jev] %d/%d", done, len(tweets))
     clf.close()
     _write(rows, updated)
@@ -216,7 +321,9 @@ def classify_claude_sync(tweets: list[dict], *, model: Optional[str] = None, wor
                 continue
             updated.append(merge(tweet["id"], None, result, rows.get(tweet["id"])))
             done += 1
-            if done % 25 == 0:
+            if done % FLUSH_EVERY == 0:
+                _write(rows, updated)
+                updated = []
                 log.info("[Claude] %d/%d", done, len(tweets))
     _write(rows, updated)
     log.info("[Claude] terminé : %d ok, %d erreurs", done, errors)
@@ -304,6 +411,25 @@ def collect_batch(batch_id: str) -> int:
     return len(updated)
 
 
+def collect_pending(*, wait: bool = False) -> int:
+    """Collecte les batches Claude soumis mais pas encore récupérés (ex. délai d'attente dépassé)."""
+    state = load_json(config.BATCHES_STATE_FILE, {})
+    pending = [bid for bid, meta in state.items() if not meta.get("collected")]
+    if not pending:
+        return 0
+    client = anthropic.Anthropic()
+    n = 0
+    for bid in pending:
+        status = client.messages.batches.retrieve(bid).processing_status
+        if status == "ended":
+            n += collect_batch(bid)
+        elif wait and wait_batch(bid, timeout_minutes=90):
+            n += collect_batch(bid)
+        else:
+            log.info("Batch %s encore en cours (%s)", bid, status)
+    return n
+
+
 def classify_claude_batch(tweets: list[dict], *, model: Optional[str] = None, wait: bool = True,
                           timeout_minutes: Optional[int] = 90) -> int:
     batch_id = submit_batch(tweets, model=model)
@@ -315,25 +441,12 @@ def classify_claude_batch(tweets: list[dict], *, model: Optional[str] = None, wa
 
 
 # ------------------------------------------------------------------------- hybrid
-def hybrid_claude_targets(tweets: list[dict]) -> list[dict]:
-    """Tweets à envoyer à Claude après Jev : écologie (texte, lexique) ou décision peu sûre."""
-    rows = load_rows()
-    out = []
-    for t in tweets:
-        row = rows.get(t["id"])
-        if not row or not row.get("jev") or row.get("claude"):
-            continue
-        if row["jev"]["values"]["parle_ecologie"] or row.get("needs_claude"):
-            out.append(t)
-    return out
-
-
 def classify_hybrid(tweets: list[dict], *, mode: str = "sync", model: Optional[str] = None,
                     workers: int = 4, wait: bool = True) -> int:
-    rows = load_rows()
-    jev_todo = [t for t in tweets if not (rows.get(t["id"]) or {}).get("jev")]
-    n = classify_jev(jev_todo, workers=workers)
-    targets = hybrid_claude_targets(tweets)
+    """Jev sur les tweets fournis, puis Claude sur les tweets écologie et les décisions peu sûres."""
+    n = classify_jev(tweets, workers=workers)
+    ids = {t["id"] for t in tweets}
+    targets = [t for t in claude_targets("ecologie_et_incertains") if t["id"] in ids]
     log.info("[hybrid] %d tweets transmis à Claude (écologie ou confiance faible)", len(targets))
     if mode == "batch":
         n += classify_claude_batch(targets, model=model, wait=wait)

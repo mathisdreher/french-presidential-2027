@@ -2,10 +2,11 @@
 
 Endpoints utilisés :
   GET /2/users/by/username/{username}   -> résolution handle -> user id
-  GET /2/users/{id}/tweets              -> timeline (pagination via meta.next_token)
+  GET /2/users/{id}/tweets              -> timeline, collecte quotidienne (3 200 posts max)
+  GET /2/tweets/search/all              -> recherche full-archive, rattrapage historique
+                                           sans plafond (500 posts par page, 1 requête/s)
 
-Authentification : jeton Bearer (app-only). La lecture des timelines nécessite
-au minimum le niveau Basic de l'API X ; le niveau Free ne permet pas ce volume.
+Authentification : jeton Bearer (app-only). Facturation à l'usage (pay-per-use).
 """
 
 from __future__ import annotations
@@ -22,10 +23,14 @@ log = logging.getLogger(__name__)
 API_BASE = "https://api.x.com/2"
 TWEET_FIELDS = "id,text,created_at,lang,public_metrics,entities,referenced_tweets,note_tweet,conversation_id"
 MAX_RESULTS = 100
+SEARCH_MAX_RESULTS = 500
+SEARCH_MIN_INTERVAL = 1.1  # secondes entre deux requêtes full-archive
 
 
 class XApiError(RuntimeError):
-    pass
+    def __init__(self, message: str, status: Optional[int] = None):
+        super().__init__(message)
+        self.status = status
 
 
 class XClient:
@@ -50,7 +55,7 @@ class XClient:
                 if reset:
                     wait = max(5, int(reset) - int(time.time()) + 2)
                 if wait > self.max_wait:
-                    raise XApiError(f"Quota X épuisé, réinitialisation dans {wait}s (> {self.max_wait}s).")
+                    raise XApiError(f"Quota X épuisé, réinitialisation dans {wait}s (> {self.max_wait}s).", 429)
                 log.warning("Rate limit X atteint sur %s, attente %ss", path, wait)
                 self._sleep(wait)
                 continue
@@ -60,7 +65,7 @@ class XClient:
                 self._sleep(wait)
                 continue
             if resp.status_code != 200:
-                raise XApiError(f"HTTP {resp.status_code} sur {path}: {resp.text[:300]}")
+                raise XApiError(f"HTTP {resp.status_code} sur {path}: {resp.text[:300]}", resp.status_code)
             return resp.json()
         raise XApiError(f"Échec répété sur {path}")
 
@@ -106,6 +111,41 @@ class XClient:
             next_token = data.get("meta", {}).get("next_token")
             if not next_token or (max_pages and page >= max_pages):
                 return
+
+
+    # ------------------------------------------------------- full-archive
+    def iter_search_all(self, query: str, *, start_time: Optional[datetime] = None,
+                        end_time: Optional[datetime] = None, max_pages: Optional[int] = None) -> Iterator[dict]:
+        """Recherche full-archive (du plus récent au plus ancien), sans plafond de 3 200 posts."""
+        params: dict = {"query": query, "max_results": SEARCH_MAX_RESULTS, "tweet.fields": TWEET_FIELDS}
+        if start_time:
+            params["start_time"] = _iso(start_time)
+        if end_time:
+            params["end_time"] = _iso(end_time)
+        page = 0
+        next_token = None
+        while True:
+            page_params = dict(params)
+            if next_token:
+                page_params["next_token"] = next_token
+            if page:
+                self._sleep(SEARCH_MIN_INTERVAL)
+            data = self._get("/tweets/search/all", page_params)
+            for tweet in data.get("data", []):
+                yield tweet
+            page += 1
+            next_token = data.get("meta", {}).get("next_token")
+            if not next_token or (max_pages and page >= max_pages):
+                return
+
+
+def author_query(username: str, include_replies: bool = False, include_retweets: bool = False) -> str:
+    query = f"from:{username.lstrip('@')}"
+    if not include_retweets:
+        query += " -is:retweet"
+    if not include_replies:
+        query += " -is:reply"
+    return query
 
 
 def _iso(dt: datetime) -> str:

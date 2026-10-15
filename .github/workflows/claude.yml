@@ -1,0 +1,109 @@
+name: Codage Claude (à la demande)
+
+# Déclenché à la main (onglet Actions > Codage Claude > Run workflow, ou depuis l'app GitHub).
+on:
+  workflow_dispatch:
+    inputs:
+      portee:
+        description: "Tweets à coder par Claude"
+        type: choice
+        options:
+          - ecologie_et_incertains
+          - incertains
+          - echantillon
+          - tous
+        default: ecologie_et_incertains
+      taille_echantillon:
+        description: "Taille de l'échantillon de validation (portée « echantillon »)"
+        type: number
+        default: 300
+      mode:
+        description: "batch : moitié prix, résultats en général sous 1 h ; sync : immédiat"
+        type: choice
+        options:
+          - batch
+          - sync
+        default: batch
+      limite:
+        description: "Nombre maximum de tweets (vide : aucune limite)"
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pipeline
+  cancel-in-progress: false
+
+jobs:
+  codage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Installer les dépendances
+        run: pip install -r requirements.txt
+
+      - name: Vérifier le secret Anthropic
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::Secret ANTHROPIC_API_KEY manquant : Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+      - name: Codage Claude
+        env:
+          PYTHONPATH: src
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
+          PORTEE: ${{ inputs.portee }}
+          TAILLE: ${{ inputs.taille_echantillon }}
+          MODE: ${{ inputs.mode }}
+          LIMITE: ${{ inputs.limite }}
+        run: |
+          args=(--engine claude --scope "$PORTEE" --sample-size "$TAILLE" --mode "$MODE" --timeout-minutes 240)
+          if [ -n "$LIMITE" ]; then args+=(--limit "$LIMITE"); fi
+          python -m presidentielle classify "${args[@]}"
+
+      - name: Validation, rapports et site
+        env:
+          PYTHONPATH: src
+        run: python -m presidentielle publish --out _site
+
+      - name: Enregistrer les données dans le dépôt
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --cached --quiet; then echo "Aucune donnée nouvelle."; exit 0; fi
+          git commit -m "Données : codage Claude ($PORTEE) du $(date -u +%F)"
+          git pull --rebase origin "$GITHUB_REF_NAME"
+          git push origin "HEAD:$GITHUB_REF_NAME"
+        env:
+          PORTEE: ${{ inputs.portee }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploiement:
+    needs: codage
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

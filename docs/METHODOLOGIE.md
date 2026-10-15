@@ -1,6 +1,6 @@
 # Protocole d'étude : l'écologie dans le discours X des candidats à la présidentielle 2027
 
-Version 0.1 (octobre 2026). Document de travail : les sections marquées « à décider » dépendent des choix du porteur de l'étude.
+Version 0.2 (octobre 2026). Document de travail.
 
 ## 1. Question de recherche et hypothèses
 
@@ -34,16 +34,21 @@ Mise en garde méthodologique : la CDA est une démarche interprétative et qual
 
 **Population.** Les candidats déclarés ou investis à la date du gel de la liste, plus les candidats pressentis explicitement suivis (Villepin). Liste et critères dans `config/candidates.yaml`. Tout ajout ou retrait est daté dans le fichier.
 
-**Période (proposition).**
+**Période.** Du 1er septembre 2026 au second tour (2 mai 2027), découpée en quatre phases
+(`config/study.yaml`) :
 
 | Phase | Dates | Intérêt |
 |---|---|---|
-| Référence | 1er septembre 2026 → 31 décembre 2026 | Rentrée politique, budget 2027, COP31 (Antalya, 9-20 novembre 2026), prix de l'énergie à l'entrée de l'hiver |
-| Pré-campagne | 1er janvier 2027 → publication de la liste officielle (début avril 2027) | Programmes, parrainages, primaires terminées |
-| Campagne officielle | liste officielle → 16 avril 2027 (fin de campagne 1er tour) | Temps de parole encadré, débats |
+| Référence | 1er septembre → 31 décembre 2026 | Rentrée politique, budget 2027, COP31 (ouverture le 9 novembre 2026), prix de l'énergie à l'entrée de l'hiver |
+| Pré-campagne | 1er janvier → 4 avril 2027 | Programmes, parrainages, liste officielle des candidats |
+| Campagne officielle | 5 → 17 avril 2027 | Égalité de temps de parole, débats |
 | 1er tour et entre-deux-tours | 18 avril → 2 mai 2027 | Recentrage sur les deux finalistes |
 
-Contrainte technique : l'API X ne restitue que les 3 200 posts les plus récents par compte. Les comptes très actifs (plus de 20 posts par jour) ne permettent donc pas de remonter au 1er septembre 2026 si l'extraction commence tard. Il faut lancer le rattrapage historique immédiatement, puis la collecte quotidienne.
+**Collecte.** Chaque compte est rattrapé intégralement depuis le 1er septembre 2026 par la recherche
+full-archive de l'API X, sans plafond de volume (la timeline d'un compte est, elle, limitée aux
+3 200 derniers posts). La collecte est ensuite quotidienne et incrémentale. Un compte ajouté en
+cours d'étude est rattrapé de la même façon. Une collecte interrompue n'avance pas le curseur et
+reprend au passage suivant, si bien qu'aucun intervalle n'est perdu.
 
 **Exclusions documentées.** Tweets en langue autre que le français (conservés mais signalés via `lang`), tweets sans texte (image seule), tweets supprimés après collecte (conservés avec la date de collecte).
 
@@ -53,21 +58,31 @@ Le livre de codes (`src/presidentielle/codebook.py`) est la source unique des va
 
 Deux moteurs appliquent la même grille :
 
-- **Jev (TypeSafe), modèle de décision.** Un appel par tweet, toutes les questions en parallèle. Chaque variable catégorielle est une question typée (oui/non, choix, échelle ordonnée) avec une distribution de probabilités et une confiance calibrée. Jev ne produit pas de texte.
-- **Claude, modèle de langage.** Même grille en sortie structurée, plus les champs textuels de sémantique locale (`lexique`, `implicites`, `nous`, `eux`, `resume`).
+- **Jev (TypeSafe), modèle de décision.** Un appel par tweet, toutes les questions en parallèle. Chaque variable catégorielle est une question typée (oui/non, choix, échelle ordonnée) avec une distribution de probabilités et une confiance calibrée. Jev ne produit pas de texte. Il code chaque jour tous les nouveaux tweets : c'est le codage de référence de l'étude.
+- **Claude, modèle de langage.** Même grille en sortie structurée, plus les champs textuels de sémantique locale (`lexique`, `implicites`, `nous`, `eux`, `resume`). Il est déclenché à la demande, sur une portée choisie : décisions incertaines de Jev, tweets écologie, échantillon de validation, ou tout le corpus.
 
-**Routage.** Jev traite 100 % des tweets. Claude traite les tweets classés écologie (pour le lexique et les implicites) et les tweets sur lesquels Jev est peu sûr (probabilité écologie entre 0,3 et 0,7, ou confiance inférieure à 0,6 sur position, cadrage ou centralité). Quand les deux moteurs ont codé un tweet, la valeur finale est celle de Jev, sauf décision peu sûre, auquel cas c'est celle de Claude. L'origine de chaque valeur finale est conservée (`final_source`).
+**Décisions incertaines.** Une décision Jev est incertaine quand la probabilité écologie est entre 0,3 et 0,7, ou quand la confiance est inférieure à 0,6 sur la position, le cadrage ou la centralité. Ces tweets sont signalés (`needs_claude`) et restent codés par Jev tant que Claude n'a pas été lancé. Quand les deux moteurs ont codé un tweet, la valeur finale est celle de Jev, sauf décision incertaine, auquel cas c'est celle de Claude. L'origine de chaque valeur finale est conservée (`final_source`) et affichée sur le site.
 
 **Langue.** La langue d'entraînement principale de Jev est l'anglais ; les instructions du livre de codes sont donc en anglais, les tweets restent en français. L'étape de validation (section 5) mesure l'effet de ce choix.
 
 ## 5. Fiabilité et validité
 
-1. **Échantillon de validation humaine.** Tirage aléatoire stratifié par candidat de 300 tweets (plus un sur-échantillonnage de 100 tweets classés écologie par Jev). Deux codeurs humains codent indépendamment les variables catégorielles avec le livre de codes, sans voir les sorties des modèles. À décider : qui sont les codeurs.
-2. **Accord inter-codeurs.** Alpha de Krippendorff par variable (nominal pour les choix, ordinal pour `niveau` et `registre`). Seuil d'acceptation : 0,67 pour une variable exploratoire, 0,80 pour les variables centrales (`parle_ecologie`, `position`, `cadrage`). Les désaccords sont arbitrés en réunion et le livre de codes est amendé (version datée).
-3. **Accord modèle-humain.** Mêmes métriques entre la référence humaine arbitrée et chaque moteur (Jev seul, Claude seul, routage hybride). Matrice de confusion par variable pour identifier les catégories confondues et reformuler leurs descriptions.
-4. **Calibration de Jev.** Diagramme de fiabilité : parmi les tweets où Jev annonce p(écologie) ≈ 0,7, environ 70 % doivent être écologie selon la référence humaine. Une calibration dégradée en français justifierait d'abaisser le seuil de routage vers Claude.
-5. **Accord inter-moteurs.** Taux d'accord Jev/Claude sur `parle_ecologie` et `position`, suivi dans le temps : une dérive signale un changement de modèle ou de corpus.
-6. **Stabilité.** Re-codage d'un échantillon de 100 tweets à un mois d'intervalle avec la même version de modèle (fidélité test-retest).
+La validation procède en trois temps.
+
+1. **Jev seul.** Le codage quotidien repose sur Jev. Ses probabilités et confiances sont conservées pour chaque variable, ce qui permet de repérer et de compter les décisions incertaines.
+2. **Claude comme second codeur, dans un second temps.** Un échantillon de validation est tiré une fois pour toutes (`data/state/validation_sample.json`) : strate aléatoire stratifiée par candidat à allocation égale (75 %), plus un sur-échantillon de tweets classés écologie par Jev (25 %) pour disposer d'assez de cas sur la position et le cadrage. Claude code cet échantillon sans voir le codage de Jev. L'échantillon peut être agrandi sans être retiré.
+3. **Mesures d'accord** (`python -m presidentielle validate`, section « Fiabilité » du site) :
+   - par variable : taux d'accord, kappa de Cohen, alpha de Krippendorff (nominal, ordinal pour `niveau` et `registre`), matrice de confusion pour l'écologie, la position et le cadrage ;
+   - par thème : alpha binaire et indice de Jaccard moyen sur les tweets que les deux moteurs classent écologie ;
+   - calibration de Jev : parmi les tweets où Jev annonce p(écologie) ≈ 0,7, la part que Claude juge écologie, et score de Brier.
+
+   Lecture de l'alpha : 0,80 et plus fiable, de 0,667 à 0,80 à confirmer, en dessous insuffisant. Les résultats sont présentés séparément pour la strate aléatoire de l'échantillon, seule estimation non biaisée, et pour l'ensemble des tweets double-codés, qui sur-représente les cas difficiles routés vers Claude.
+
+**Portée de cette validation.** L'accord entre deux modèles mesure leur convergence, pas la validité du codage : deux modèles peuvent partager les mêmes biais. Avant toute publication scientifique, un double codage humain d'un sous-échantillon (au moins 200 tweets, deux codeurs indépendants, même livre de codes) est nécessaire pour mesurer l'accord humain/humain puis humain/modèle. Les désaccords arbitrés servent à réviser le livre de codes, dont chaque version est datée.
+
+**Langue.** Le décalage entre instructions en anglais et tweets en français est mesuré indirectement par la calibration de Jev ; une calibration dégradée justifierait d'élargir la plage des décisions incertaines.
+
+**Stabilité.** Les versions de modèles sont enregistrées sur chaque ligne (`jev.model`, `claude.model`). Un changement de version de Jev se traduit par un nouveau codage d'un échantillon de contrôle avant d'être adopté.
 
 ## 6. Plan d'analyse
 

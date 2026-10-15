@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 from presidentielle import report
@@ -21,7 +20,5 @@ def test_report_from_sample(tmp_path):
     assert themes.loc["energie_nucleaire", "tweets"] == 1
     md = (tmp_path / "synthese.md").read_text(encoding="utf-8")
     assert "## Par candidat" in md and "Cadrage des tweets" in md
-    site = json.loads((tmp_path / "site_data.json").read_text(encoding="utf-8"))
-    assert site["totals"]["tweets"] == 6 and len(site["ecology_tweets"]) == 3
-    assert site["ecology_tweets"][0]["p_ecologie"] is not None
-    assert any(w["candidate"] == "Candidat A" for w in site["weekly"])
+    weekly = report.weekly_series(df)
+    assert set(weekly["candidate"]) == {"Candidat A", "Candidat B", "Candidat C"}

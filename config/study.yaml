@@ -1,0 +1,51 @@
+# Paramètres de l'étude.
+#
+# start : date de début du corpus. Tout compte jamais collecté est rattrapé depuis cette
+#         date (recherche full-archive de l'API X, sans limite de volume).
+start: 2026-09-01
+
+# Phases d'analyse (dates incluses, heure de Paris approximée en UTC).
+phases:
+  - key: reference
+    label: Référence
+    start: 2026-09-01
+    end: 2026-12-31
+  - key: precampagne
+    label: Pré-campagne
+    start: 2027-01-01
+    end: 2027-04-04
+  - key: campagne
+    label: Campagne officielle
+    start: 2027-04-05
+    end: 2027-04-17
+  - key: entre_deux_tours
+    label: 1er tour et entre-deux-tours
+    start: 2027-04-18
+    end: 2027-05-02
+
+# Événements exogènes affichés sur les séries temporelles (à compléter au fil de l'étude).
+events:
+  - date: 2026-11-09
+    label: Ouverture de la COP31
+  - date: 2027-04-18
+    label: 1er tour
+  - date: 2027-05-02
+    label: 2nd tour
+
+# Familles politiques utilisées pour les filtres et les comparaisons par camp (hypothèse H2).
+# Le rattachement de chaque candidat est un choix de codage de l'analyste (candidates.yaml).
+blocs:
+  - key: gauche_radicale
+    label: Gauche radicale
+  - key: gauche
+    label: Gauche
+  - key: ecologistes
+    label: Écologistes
+  - key: centre
+    label: Centre
+  - key: droite
+    label: Droite
+  - key: souverainistes
+    label: Souverainistes
+  - key: extreme_droite
+    label: Extrême droite

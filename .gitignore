@@ -10,12 +10,9 @@ __pycache__/
 .venv/
 venv/
 
-# Données générées (sauf échantillon)
-data/raw/*
-data/classified/*
-data/reports/*
-data/state/*
-!data/raw/.gitkeep
-!data/classified/.gitkeep
-!data/reports/.gitkeep
-!data/state/.gitkeep
+# Site construit (publié par GitHub Actions, jamais versionné)
+_site/
+
+# Les données (data/raw, data/classified, data/state, data/reports) sont versionnées :
+# la collecte quotidienne les enregistre dans le dépôt pour rester incrémentale.
+data/classified/*.tmp

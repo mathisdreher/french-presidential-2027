@@ -3,6 +3,7 @@
 # status  : declare   -> candidature annoncée publiquement
 #           designe   -> investi par son parti / primaire
 #           pressenti -> non déclaré mais suivi (désactivé par défaut)
+# bloc    : famille politique (clé définie dans study.yaml), choix de codage à valider
 # enabled : false -> ignoré par le pipeline
 #
 # Liste établie mi-octobre 2026 (sources : France 24, Public Sénat, Touteleurope).
@@ -13,51 +14,63 @@ candidates:
   # --- Droite, centre, extrême droite ---
   - name: Marine Le Pen
     party: Rassemblement national
+    bloc: extreme_droite
     handle: MLP_officiel
     status: declare
   - name: Jordan Bardella
     party: Rassemblement national
+    bloc: extreme_droite
     handle: J_Bardella
     status: pressenti
     enabled: false
   - name: Édouard Philippe
     party: Horizons
+    bloc: centre
     handle: EPhilippePM
     status: declare
   - name: Bruno Retailleau
     party: Les Républicains
+    bloc: droite
     handle: BrunoRetailleau
     status: designe
   - name: Gabriel Attal
     party: Renaissance
+    bloc: centre
     handle: GabrielAttal
     status: declare
   - name: David Lisnard
     party: Nouvelle Énergie
+    bloc: droite
     handle: dlisnard
     status: declare
   - name: Éric Zemmour
     party: Reconquête
+    bloc: extreme_droite
     handle: ZemmourEric
     status: declare
   - name: Olivier Becht
     party: Renaissance (dissident)
+    bloc: centre
     handle: olivierbecht
     status: declare
   - name: Nicolas Dupont-Aignan
     party: Debout la France
+    bloc: souverainistes
     handle: dupontaignan
     status: declare
   - name: Florian Philippot
     party: Les Patriotes
+    bloc: souverainistes
     handle: f_philippot
     status: declare
   - name: François Asselineau
     party: UPR
+    bloc: souverainistes
     handle: UPR_Asselineau
     status: declare
   - name: Dominique de Villepin
     party: La France humaniste
+    bloc: droite
     handle: Villepin
     status: pressenti   # a annoncé qu'il confirmera à l'ouverture de la campagne (BFM, août 2026)
     enabled: true
@@ -65,43 +78,53 @@ candidates:
   # --- Gauche, écologistes, extrême gauche ---
   - name: Raphaël Glucksmann
     party: Place publique / PS
+    bloc: gauche
     handle: rglucks1
     status: designe
   - name: Jean-Luc Mélenchon
     party: La France insoumise
+    bloc: gauche_radicale
     handle: JLMelenchon
     status: declare
   - name: Karim Bouamrane
     party: Parti socialiste
+    bloc: gauche
     handle: KBouamrane
     status: declare
   - name: Delphine Batho
     party: Écologistes
+    bloc: ecologistes
     handle: delphinebatho
     status: declare
   - name: Fabien Roussel
     party: PCF
+    bloc: gauche_radicale
     handle: Fabien_Roussel
     status: declare
   - name: François Ruffin
     party: Debout !
+    bloc: gauche_radicale
     handle: Francois_Ruffin
     status: declare
   - name: Bernard Cazeneuve
     party: La Convention
+    bloc: gauche
     handle: BCazeneuve
     status: declare
   - name: Nathalie Arthaud
     party: Lutte ouvrière
+    bloc: gauche_radicale
     handle: n_arthaud
     status: declare
   - name: Anasse Kazib
     party: Révolution permanente
+    bloc: gauche_radicale
     handle: AnasseKazib
     status: declare
 
   # --- Autres ---
   - name: Natacha Polony
     party: Sans étiquette
+    bloc: souverainistes
     handle: NPolony
     status: declare

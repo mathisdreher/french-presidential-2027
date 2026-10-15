@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Écologie et présidentielle 2027</title>
+  <meta name="description" content="Ce que les candidats à l'élection présidentielle 2027 publient sur X à propos du climat, de l'énergie et de l'environnement, codé tweet par tweet.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Cpath d='M9 21c0-7 5-11 14-12-1 9-5 14-12 14' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+  <script>
+    try { const t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+</head>
+<body>
+  <header class="masthead">
+    <div class="wrap masthead-inner">
+      <div>
+        <p class="eyebrow">Présidentielle 2027 · observatoire du discours</p>
+        <h1>L'écologie dans la campagne sur X</h1>
+        <p class="lede">Ce que les candidats publient sur X à propos du climat, de l'énergie et de l'environnement, codé tweet par tweet selon une grille inspirée de l'analyse critique du discours.</p>
+        <p class="meta">Mise à jour <time id="updated">…</time> · <a href="#methode">Méthode</a> · <a href="#fiabilite">Fiabilité</a></p>
+      </div>
+      <button id="theme-toggle" class="ghost-btn" type="button" aria-label="Changer de thème">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+        <span>Thème</span>
+      </button>
+    </div>
+  </header>
+
+  <nav class="filters" aria-label="Filtres">
+    <div class="wrap filters-inner">
+      <label class="field"><span>Période</span><select id="f-period"></select></label>
+      <label class="field"><span>Famille politique</span><select id="f-bloc"></select></label>
+      <label class="field"><span>Mettre en avant</span><select id="f-focus"></select></label>
+    </div>
+  </nav>
+
+  <main class="wrap">
+    <div id="banner" class="banner" hidden></div>
+
+    <section class="kpi-row" id="kpis" aria-label="Chiffres clés"></section>
+
+    <section class="card" id="saillance">
+      <header class="card-head">
+        <div>
+          <h2>Qui parle d'écologie ?</h2>
+          <p class="sub" id="saillance-sub">Part des tweets originaux de chaque candidat qui abordent l'écologie, l'environnement ou l'énergie.</p>
+        </div>
+        <button class="table-toggle" type="button" aria-expanded="false">Tableau</button>
+      </header>
+      <div class="chart" id="saillance-chart"></div>
+      <div class="table-view" hidden></div>
+    </section>
+
+    <section class="card" id="position">
+      <header class="card-head">
+        <div>
+          <h2>Pour ou contre l'action écologique ?</h2>
+          <p class="sub">Position exprimée dans les tweets écologie : critique de l'écologie à gauche de l'axe, favorable à la transition à droite, neutre au centre.</p>
+        </div>
+        <button class="table-toggle" type="button" aria-expanded="false">Tableau</button>
+      </header>
+      <div class="legend" id="position-legend"></div>
+      <div class="chart" id="position-chart"></div>
+      <div class="table-view" hidden></div>
+    </section>
+
+    <section class="card" id="evolution">
+      <header class="card-head">
+        <div>
+          <h2>Évolution semaine par semaine</h2>
+          <p class="sub">Part des tweets consacrés à l'écologie, par semaine. Choisissez un candidat dans « Mettre en avant » pour le comparer à l'ensemble.</p>
+        </div>
+        <button class="table-toggle" type="button" aria-expanded="false">Tableau</button>
+      </header>
+      <div class="legend" id="evolution-legend"></div>
+      <div class="chart" id="evolution-chart"></div>
+      <div class="table-view" hidden></div>
+    </section>
+
+    <section class="card" id="themes">
+      <header class="card-head">
+        <div>
+          <h2>De quoi parlent-ils, et comment ?</h2>
+          <p class="sub" id="themes-sub">Répartition des tweets écologie de chaque candidat.</p>
+        </div>
+        <button class="table-toggle" type="button" aria-expanded="false">Tableau</button>
+      </header>
+      <div class="tabs" role="tablist" id="themes-tabs"></div>
+      <div class="chart heat-scroll" id="themes-chart"></div>
+      <div class="table-view" hidden></div>
+    </section>
+
+    <section class="card" id="discours">
+      <header class="card-head">
+        <div>
+          <h2>Nous et eux : le carré idéologique</h2>
+          <p class="sub" id="discours-sub">Stratégies discursives dans l'ensemble des tweets des candidats, écologie ou non.</p>
+        </div>
+        <button class="table-toggle" type="button" aria-expanded="false">Tableau</button>
+      </header>
+      <div class="tabs" role="tablist" id="discours-tabs"></div>
+      <div class="chart heat-scroll" id="discours-chart"></div>
+      <div class="table-view" hidden></div>
+    </section>
+
+    <section class="card" id="explorer">
+      <header class="card-head">
+        <div>
+          <h2>Explorer les tweets écologie</h2>
+          <p class="sub" id="explorer-sub">Chaque tweet avec son codage. Les filtres ci-dessous s'ajoutent à la période et à la famille politique.</p>
+        </div>
+      </header>
+      <div class="explorer-filters">
+        <label class="field"><span>Candidat</span><select id="x-cand"></select></label>
+        <label class="field"><span>Thème</span><select id="x-theme"></select></label>
+        <label class="field"><span>Position</span><select id="x-pos"></select></label>
+        <label class="field"><span>Cadrage</span><select id="x-cad"></select></label>
+        <label class="field grow"><span>Rechercher</span><input id="x-q" type="search" placeholder="Mot, expression…"></label>
+        <label class="field"><span>Trier</span><select id="x-sort"><option value="date">Plus récents</option><option value="likes">Plus aimés</option></select></label>
+      </div>
+      <ol class="tweet-list" id="x-list"></ol>
+      <button class="ghost-btn more" id="x-more" type="button" hidden>Afficher plus</button>
+    </section>
+
+    <section class="card" id="fiabilite">
+      <header class="card-head">
+        <div>
+          <h2>Fiabilité du codage</h2>
+          <p class="sub">Accord entre les deux moteurs de codage, Jev et Claude, sur les tweets qu'ils ont tous deux codés.</p>
+        </div>
+      </header>
+      <div id="validation"></div>
+    </section>
+
+    <section class="prose" id="methode">
+      <h2>Méthode</h2>
+      <p><strong>Corpus.</strong> Tweets originaux publiés sur X par les comptes officiels des candidats déclarés, investis ou suivis, depuis le <span id="m-start">1er septembre 2026</span>. Les réponses et les reposts sont exclus. La collecte est quotidienne.</p>
+      <p><strong>Cadre.</strong> La grille s'inspire de l'approche socio-cognitive de Teun A. van Dijk. Elle code les macrostructures (le tweet parle-t-il d'écologie, à quel point, de quels thèmes), la position, le cadrage, le carré idéologique (valoriser « nous », dévaloriser « eux »), les acteurs désignés comme adversaires ou victimes, l'acte de discours et le registre. Le lexique marqué et les présupposés sont relevés pour la lecture qualitative.</p>
+      <p><strong>Codage.</strong> Chaque tweet est codé par Jev, un modèle de décision qui renvoie pour chaque variable une probabilité calibrée. Claude, un modèle de langage, sert de second codeur à la demande : sur les décisions incertaines de Jev, sur un échantillon de validation, et pour le relevé du lexique et des implicites. La valeur affichée est celle de Jev, sauf décision incertaine recodée par Claude.</p>
+      <p><strong>Limites.</strong> X n'est qu'un fragment du discours de campagne, souvent écrit par des équipes. Les modèles peuvent se tromper, notamment sur l'ironie et les tweets très courts. Les pourcentages calculés sur moins de 20 tweets sont fragiles. L'accord entre deux modèles mesure leur convergence, pas la justesse du codage : une validation par codeurs humains est prévue.</p>
+      <details class="codebook">
+        <summary>Livre de codes</summary>
+        <div id="codebook"></div>
+      </details>
+    </section>
+  </main>
+
+  <footer class="wrap footer">
+    <p>Données : API X. Codage : Jev (TypeSafe) et Claude (Anthropic). Les tweets restent la propriété de leurs auteurs ; chaque citation renvoie au message original.</p>
+  </footer>
+
+  <div id="tooltip" class="tooltip" role="status" hidden></div>
+  <noscript><p class="wrap">Ce site nécessite JavaScript pour afficher les graphiques.</p></noscript>
+  <script src="app.js" defer></script>
+</body>
+</html>

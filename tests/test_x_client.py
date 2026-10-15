@@ -68,3 +68,25 @@ def test_unknown_user_raises():
 def test_full_text_prefers_note_tweet():
     assert full_text({"text": "court…", "note_tweet": {"text": "version longue"}}) == "version longue"
     assert full_text({"text": "court"}) == "court"
+
+
+def test_search_all_paginates_and_paces_requests():
+    from presidentielle.x_client import author_query
+    client, session, sleeps = make_client([
+        _resp(200, {"data": [{"id": "9"}], "meta": {"next_token": "n1"}}),
+        _resp(200, {"data": [{"id": "8"}], "meta": {}}),
+    ])
+    out = list(client.iter_search_all(author_query("@Abc"), start_time=datetime(2026, 9, 1, tzinfo=timezone.utc)))
+    assert [t["id"] for t in out] == ["9", "8"]
+    first, second = (c.kwargs["params"] for c in session.get.call_args_list)
+    assert session.get.call_args_list[0].args[0].endswith("/tweets/search/all")
+    assert first["query"] == "from:Abc -is:retweet -is:reply" and first["max_results"] == 500
+    assert "next_token" not in first and second["next_token"] == "n1"
+    assert sleeps == [1.1]
+
+
+def test_http_error_carries_status():
+    client, _, _ = make_client([_resp(403, text="forbidden")])
+    with pytest.raises(XApiError) as exc:
+        list(client.iter_search_all("from:x"))
+    assert exc.value.status == 403

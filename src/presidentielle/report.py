@@ -1,16 +1,14 @@
 """Agrégation : CSV détaillé, synthèses par candidat et par thème, dimensions CDA,
-rapport Markdown et export JSON pour le site."""
+série hebdomadaire et rapport Markdown. Les données du site sont produites par site.py."""
 
 from __future__ import annotations
 
-import json
 import logging
 from collections import Counter
 from pathlib import Path
 
 import pandas as pd
 
-from . import codebook as cb
 from . import config
 from .storage import read_jsonl
 
@@ -156,31 +154,6 @@ def _md_table(df: pd.DataFrame) -> str:
     return "\n".join(out)
 
 
-def site_data(df: pd.DataFrame, cands: pd.DataFrame, themes: pd.DataFrame) -> dict:
-    """JSON consommé par le site de visualisation."""
-    eco = df[df["parle_ecologie"]].copy()
-    eco["created_at"] = eco["created_at"].dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-    tweet_cols = ["id", "candidate", "party", "handle", "created_at", "text", "likes", "retweets", "url",
-                  "niveau", "themes", "position", "cadrage", "polarisation", "adversaire", "victime",
-                  "acte_discursif", "registre", "lexique", "resume", "final_source", "p_ecologie"]
-    return {
-        "generated_at": pd.Timestamp.now("UTC").strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "totals": {"tweets": int(len(df)), "tweets_ecologie": int(len(eco)),
-                   "part_ecologie_pct": round(100 * len(eco) / len(df), 1) if len(df) else 0.0},
-        "codebook": {
-            "themes": [{"key": t.key, "label": t.label} for t in cb.THEMES],
-            **{v.key: [{"key": o.key, "label": o.label} for o in v.options] for v in cb.CHOICE_VARS},
-            "registre": [{"key": k, "label": k} for k in cb.REGISTRE.level_keys],
-        },
-        "candidates": json.loads(cands.to_json(orient="records", force_ascii=False)),
-        "themes": json.loads(themes.to_json(orient="records", force_ascii=False)),
-        "weekly": json.loads(weekly_series(df).to_json(orient="records", force_ascii=False)),
-        "crosstabs": {col: json.loads(crosstab(df, col, ecology_only=(col == "cadrage")).to_json(orient="records", force_ascii=False))
-                      for col in CDA_CHOICES},
-        "ecology_tweets": json.loads(eco[[c for c in tweet_cols if c in eco.columns]].to_json(orient="records", force_ascii=False)),
-    }
-
-
 def run(out_dir: Path = config.REPORTS_DIR, raw_path: Path = config.RAW_TWEETS_FILE,
         cls_path: Path = config.CLASSIFICATIONS_FILE) -> dict[str, Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -202,14 +175,12 @@ def run(out_dir: Path = config.REPORTS_DIR, raw_path: Path = config.RAW_TWEETS_F
         "themes": out_dir / "synthese_themes.csv",
         "hebdo": out_dir / "serie_hebdomadaire.csv",
         "markdown": out_dir / "synthese.md",
-        "site": out_dir / "site_data.json",
     }
     detail.to_csv(paths["detail"], index=False)
     cands.to_csv(paths["candidats"], index=False)
     themes.to_csv(paths["themes"], index=False)
     weekly_series(df).to_csv(paths["hebdo"], index=False)
     write_markdown(df, cands, themes, paths["markdown"])
-    paths["site"].write_text(json.dumps(site_data(df, cands, themes), ensure_ascii=False, indent=1), encoding="utf-8")
     for p in paths.values():
         log.info("Écrit %s", p)
     return paths
