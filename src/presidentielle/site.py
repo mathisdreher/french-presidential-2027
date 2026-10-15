@@ -166,6 +166,9 @@ def payload(raw_path: Path | None = None, cls_path: Path | None = None, validati
             "photo": pics.get(c.slug) or ({"url": user["image"], "source": f"https://x.com/{c.handle}", "auteur": "Photo de profil X",
                                            "auteur_en": "X profile picture", "licence": ""} if user.get("image") else None),
         })
+    for c, out in zip(candidates, cand_out):
+        if out["photo"] and c.cadrage:
+            out["photo"] = {**out["photo"], "cadrage": c.cadrage}
     bloc_of = {c.slug: c.bloc for c in candidates}
     return {
         "generated_at": generated.strftime("%Y-%m-%dT%H:%M:%SZ"),

@@ -536,6 +536,22 @@ window.MESSAGES = {
     lex_rules: "Un mot doit apparaître dans au moins deux tweets ; un même mot compte au plus trois fois par tweet ; les mots vides, les nombres et le nom du candidat sont écartés.",
     lex_foreign_one: "{n} tweet écologie rédigé dans une autre langue est écarté.",
     lex_foreign_other: "{n} tweets écologie rédigés dans une autre langue sont écartés.",
+
+    // jeux : défi du jour, indices, séries
+    daily_btn: "Défi du jour",
+    daily_tag: "Défi du {date}",
+    daily_hint: "Défi du jour : les mêmes tweets pour tout le monde aujourd'hui. Partagez votre score pour vous comparer.",
+    replay_free: "Partie libre, d'autres tweets",
+    share_qui_daily: "Défi du {date} : {score} sur {n} à « Qui a tweeté ? ». Mêmes tweets pour tout le monde aujourd'hui, à vous !",
+    streak: "série de {n} ✓",
+    best_streak: "Meilleure série : {n} bonnes réponses d'affilée",
+    hint_btn: "Un indice (−½ point)",
+    hint_title: "Indice :",
+    qui_family: "Presque : c'était {name}, de la même famille ({family}).",
+    qui_points: "{n} point sur ce tweet.",
+    qui_hint_cost: "L'indice a coûté ½ point.",
+    codebook_says: "Ce que dit le livre de codes",
+    heat_zero: "aucun tweet",
   },
 
   en: {
@@ -1071,5 +1087,21 @@ window.MESSAGES = {
     lex_rules: "A word must appear in at least two tweets; a word counts at most three times per tweet; stop words, numbers and the candidate's own name are left out.",
     lex_foreign_one: "{n} ecology tweet written in another language is left out.",
     lex_foreign_other: "{n} ecology tweets written in other languages are left out.",
+
+    // games: daily challenge, hints, streaks
+    daily_btn: "Daily challenge",
+    daily_tag: "{date} challenge",
+    daily_hint: "Daily challenge: the same tweets for everyone today. Share your score to compare.",
+    replay_free: "Free play, other tweets",
+    share_qui_daily: "{date} challenge: {score} out of {n} in “Who tweeted it?”. Same tweets for everyone today, your turn!",
+    streak: "{n} in a row ✓",
+    best_streak: "Best streak: {n} right answers in a row",
+    hint_btn: "A clue (−½ point)",
+    hint_title: "Clue:",
+    qui_family: "Close: it was {name}, from the same family ({family}).",
+    qui_points: "{n} point for this tweet.",
+    qui_hint_cost: "The clue cost ½ point.",
+    codebook_says: "What the codebook says",
+    heat_zero: "no tweets",
   },
 };

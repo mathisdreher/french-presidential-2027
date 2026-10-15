@@ -52,6 +52,7 @@ class Candidate:
     note: str = ""                 # signalement affiché sur le site
     party_en: str = ""             # version anglaise du site, si le nom du parti se traduit
     note_en: str = ""
+    cadrage: Optional[list] = None   # [x, y, zoom] du visage dans la photo, pour les portraits ronds
 
     @property
     def slug(self) -> str:
@@ -82,6 +83,7 @@ def load_candidates(path: Path = CANDIDATES_FILE, only_enabled: bool = True) -> 
             note=item.get("note", ""),
             party_en=item.get("party_en", ""),
             note_en=item.get("note_en", ""),
+            cadrage=item.get("cadrage"),
         )
         if only_enabled and not cand.enabled:
             continue

@@ -191,6 +191,9 @@ const fwLabel = (key) => L(S.fw.get(key), "label") || key;
 const candName = (k) => (S.cand.get(k) || { name: k }).name;
 const candParty = (k) => L(S.cand.get(k), "party");
 const byName = (a, b) => FMT.coll.compare(a.name, b.name);
+// Ordre politique, de la gauche radicale à l'extrême droite (ordre des familles de study.yaml), puis alphabétique
+const blocRank = (k) => { const i = (S.data.study.blocs || []).findIndex((b) => b.key === (S.cand.get(k) || {}).bloc); return i < 0 ? 99 : i; };
+const byBloc = (ka, kb) => blocRank(ka) - blocRank(kb) || FMT.coll.compare(candName(ka), candName(kb));
 const growthMap = () => S.data.codebook.growth || {};
 function shortName(name) {
   const w = name.split(" ");
@@ -319,13 +322,24 @@ function titleWithInfo(tag, text, fwKey) { return el("div", { class: "title-row"
 /* =================================================================== avatars et comptes */
 function initials(name) { return name.split(/[\s-]+/).filter(Boolean).map((w) => w[0]).slice(0, 2).join("").toUpperCase(); }
 const photoCredit = (p) => `${t("photo")} ${L(p, "auteur") || t("unknown_author")}${p.licence ? ", " + p.licence : ""}`;
+// Centre le visage dans un cadre carré : cadrage [x, y, zoom] issu de candidates.yaml, sinon haut de la photo
+function framePhoto(img, cad) {
+  const apply = () => {
+    const r = img.naturalHeight / img.naturalWidth || 1.33, [fx, fy, z] = cad || [0.5, 0.3, 1];
+    const w = z * Math.max(100, 100 / r), h = w * r;
+    Object.assign(img.style, { position: "absolute", maxWidth: "none", objectFit: "fill", width: `${w}%`, height: `${h}%`,
+      left: `${clamp(50 - fx * w, 100 - w, 0)}%`, top: `${clamp(50 - fy * h, 100 - h, 0)}%` });
+  };
+  if (img.complete && img.naturalWidth) apply(); else img.addEventListener("load", apply, { once: true });
+  return img;
+}
 function avatar(key, size = 28) {
   const c = S.cand.get(key) || { name: key };
   const box = el("span", { class: "avatar", style: `width:${size}px;height:${size}px;font-size:${Math.round(size * 0.38)}px`, "aria-hidden": "true" });
   if (c.photo && c.photo.url) {
     const img = el("img", { src: c.photo.url, alt: "", loading: "lazy", decoding: "async", referrerpolicy: "no-referrer", title: photoCredit(c.photo) });
     img.addEventListener("error", () => { box.replaceChildren(initials(c.name)); });
-    box.append(img);
+    box.append(framePhoto(img, c.photo.cadrage));
   } else box.append(initials(c.name));
   return box;
 }
@@ -587,7 +601,7 @@ function renderEvolution(box, legend, tweets) {
 // Petits multiples : une courbe par candidat, sur une échelle commune, avec l'ensemble en gris
 function renderEvolutionGrid(box, full, all, perCand) {
   const rows = [...perCand].map(([k, m]) => { let n = 0, eco = 0; for (const v of m.values()) { n += v.n; eco += v.eco; } return { k, m, n, eco }; })
-    .filter((r) => r.n >= MIN_N_SCALE).sort((a, b) => b.eco / b.n - a.eco / a.n);
+    .filter((r) => r.n >= MIN_N_SCALE).sort((a, b) => byBloc(a.k, b.k));
   const pts = rows.flatMap((r) => [...r.m.values()].filter((v) => v.n >= EVO_MIN_WEEK).map((v) => v.eco / v.n));
   const ymax = [0.1, 0.2, 0.3, 0.4, 0.6, 0.8, 1].find((s) => s >= Math.max(...pts, 0.02) * 1.05) || 1;
   const W = 220, H = 74, pad = 4;
@@ -620,8 +634,13 @@ function renderHeat(box, id, rows, cols, opts = {}) {
   const grid = el("div", { class: "heat", style: `--cols:${cols.length}` });
   grid.append(el("div"));
   cols.forEach((c) => grid.append(el("div", { class: "col-head", title: c.title || c.label, text: c.label })));
+  let group = null;
   for (const r of rows) {
     const focus = S.focus && S.focus === r.key;
+    if (S.cand.has(r.key) && blocRank(r.key) !== group) {
+      group = blocRank(r.key);
+      grid.append(el("div", { class: "heat-group", style: "grid-column:1/-1", text: blocLabel((S.cand.get(r.key) || {}).bloc) }));
+    }
     grid.append(el("div", { class: "row-head" + (focus ? " is-focus" : "") + (r.n < MIN_N_SCALE ? " small-n" : ""), title: r.label },
       r.avatar === false ? null : avatar(r.key, 18), " ", el("span", { class: "full", text: r.label }), el("span", { class: "short", text: S.cand.has(r.key) ? shortName(r.label) : r.label }),
       r.n !== undefined ? el("small", { text: `n=${r.n}` }) : null));
@@ -633,7 +652,7 @@ function renderHeat(box, id, rows, cols, opts = {}) {
         grid.append(empty); continue;
       }
       const selected = S.selectedCell && S.selectedCell.row === r.key && S.selectedCell.col === c.key && S.selectedCell.id === id;
-      const cell = el("div", { class: `cell q${q(v)}` + (S.focus && S.cand.has(r.key) && !focus ? " dim" : "") + (selected ? " selected" : ""),
+      const cell = el("div", { class: `cell ${v === 0 ? "zero" : "q" + q(v)}` + (S.focus && S.cand.has(r.key) && !focus ? " dim" : "") + (selected ? " selected" : ""),
         role: opts.onCell ? "button" : null, "aria-label": t("aria_cell", { row: r.label, col: c.label, value: fmt(v) }) });
       hoverable(cell, () => ({ title: `${r.label} · ${c.label}`, rows: [{ value: fmt(v), label: opts.unit || "" }, ...(r.counts ? [{ value: num(r.counts[c.key] || 0), label: t("tt_tweets_of", { n: num(r.n) }) }] : [])],
         note: r.n < MIN_N ? t("fragile_n", { n: MIN_N }) : (opts.onCell ? t("click_examples") : null) }));
@@ -647,12 +666,19 @@ function renderHeat(box, id, rows, cols, opts = {}) {
   }
   const notes = [opts.note, clamped ? t("heat_clamped", { n: MIN_N_SCALE }) : null].filter(Boolean);
   box.append(el("div", { class: "heat-scroll" }, grid),
-    el("div", { class: "scale" }, el("span", { text: opts.min0 || pct(0, 0) }), el("span", { class: "steps" }, [0, 1, 2, 3, 4, 5, 6].map((i) => el("span", { class: `q${i}` }))), el("span", { text: (clamped ? "≥ " : "") + fmt(max) })),
+    el("div", { class: "scale" }, el("span", { class: "steps" }, el("span", { class: "zero" })), el("span", { text: t("heat_zero") }),
+      el("span", { class: "scale-gap" }), el("span", { text: opts.min0 || pct(0, 0) }), el("span", { class: "steps" }, [0, 1, 2, 3, 4, 5, 6].map((i) => el("span", { class: `q${i}` }))), el("span", { text: (clamped ? "≥ " : "") + fmt(max) })),
     notes.length ? el("p", { class: "note-small", text: notes.join(" ") }) : null);
   setTable(id, [{ label: opts.rowHeader || t("th_candidate") }, ...(rows[0].n !== undefined ? [{ label: t("th_tweets"), num: true }] : []), ...cols.map((c) => ({ label: c.label, num: true }))],
     rows.map((r) => [r.label, ...(r.n !== undefined ? [num(r.n)] : []), ...cols.map((c) => (r.values[c.key] === null || r.values[c.key] === undefined ? "–" : fmt(r.values[c.key])))]));
 }
 
+// Colonnes de la plus fréquente à la plus rare, toutes lignes confondues ; « autre » toujours en dernier
+function orderCols(cols, rows) {
+  const total = (k) => rows.reduce((a, r) => a + (r.counts ? r.counts[k] || 0 : r.values[k] || 0), 0);
+  const last = (k) => (/^autre/.test(k) ? 1 : 0);
+  return [...cols].sort((a, b) => last(a.key) - last(b.key) || total(b.key) - total(a.key));
+}
 /* Répartition d'une variable par candidat */
 function distribution(stats, variable, ecologyOnly) {
   const v = V(variable);
@@ -668,8 +694,8 @@ function distribution(stats, variable, ecologyOnly) {
       else if (val in counts) counts[val]++;
     }
     return { key: s.key, label: candName(s.key), n: pool.length, counts, values: Object.fromEntries(cols.map((c) => [c.key, pool.length ? counts[c.key] / pool.length : 0])) };
-  }).filter((r) => r.n > 0);
-  return { rows, cols };
+  }).filter((r) => r.n > 0).sort((a, b) => byBloc(a.key, b.key));
+  return { rows, cols: v.kind === "score" ? cols : orderCols(cols, rows) };
 }
 
 /* =================================================================== boussole */
@@ -764,7 +790,7 @@ function kpis(tweets) {
 }
 
 function stripCard() {
-  const list = [...S.cands].sort(byName);
+  const list = [...S.cands].sort((a, b) => byBloc(a.key, b.key));
   const flagged = list.filter((c) => ACCOUNT[c.compte]);
   return el("section", { class: "card", id: "candidats" },
     el("header", { class: "card-head" }, el("div", {}, el("h2", { text: t("strip_title") }), el("p", { class: "sub", text: t("strip_sub") }))),
@@ -960,7 +986,8 @@ function renderAppropriation(panel) {
     return el("div", { class: "bar-row" }, el("div", { class: "bar-name", text: L(r.b, "label") }), track);
   })));
   setTable("appro-sal", [{ label: t("th_family") }, { label: t("th_tweets"), num: true }, { label: t("th_eco_tweets"), num: true }, { label: t("th_share"), num: true }], salRows.map((r) => [L(r.b, "label"), num(r.n), num(r.eco), pct(r.eco / r.n)]));
-  const cols = themes.map((o) => ({ key: o.key, label: L(o, "label") }));
+  const ecoAll = tweets.filter((tw) => tw.e);
+  const cols = orderCols(themes.map((o) => ({ key: o.key, label: L(o, "label") })), [{ values: Object.fromEntries(themes.map((o) => [o.key, ecoAll.filter((tw) => tw.themes.includes(o.key)).length])) }]);
   const profRows = blocs.map((b) => { const tv = themeVector(blocTweets[b.key]); return { key: b.key, label: L(b, "label"), n: tv.n, avatar: false, values: Object.fromEntries(themes.map((o, i) => [o.key, tv.v[i]])) }; }).filter((r) => r.n > 0);
   renderHeat(prof.querySelector(".chart"), "appro-blocs", profRows, cols, { rowHeader: t("th_family"), note: t("multi_themes"), empty: t("empty_eco_period") });
   const stats = byCandidate(tweets).filter((s) => s.eco >= 5);
@@ -969,7 +996,7 @@ function renderAppropriation(panel) {
     const values = {};
     for (const b of blocs) { const others = blocTweets[b.key].filter((tw) => tw.c !== s.key); const tv = themeVector(others); values[b.key] = tv.n >= 5 ? cosine(mine, tv.v) : null; }
     return { key: s.key, label: candName(s.key), n: s.eco, values };
-  });
+  }).sort((a, b) => byBloc(a.key, b.key));
   renderHeat(sim.querySelector(".chart"), "appro-sim", simRows, blocs.map((b) => ({ key: b.key, label: L(b, "label") })), { domain: "minmax", format: f2, unit: t("similarity"),
     empty: t("appro_sim_empty"), note: t("appro_sim_note") });
 }
@@ -1135,7 +1162,7 @@ function renderMots(panel) {
       })));
     fBox.append(el("div", { class: "table-view" }, table));
     const rows = [...S.cands].map((c) => ({ key: c.key, label: c.name, values: Object.fromEntries(used.map((f) => [f.key, f.par_candidat[c.key] || 0])) }))
-      .filter((r) => Object.values(r.values).some((v) => v > 0));
+      .filter((r) => Object.values(r.values).some((v) => v > 0)).sort((a, b) => byBloc(a.key, b.key));
     const heat = el("div", { class: "heat-gap" });
     fBox.append(heat);
     renderHeat(heat, "formules", rows, used.map((f) => ({ key: f.key, label: LANG === "en" && f.en ? f.en : f.label.replace(/[«»]/g, "").trim(), title: f.label })), { format: (v) => num(v), min0: "0", unit: t("uses") });
@@ -1338,7 +1365,7 @@ function renderMethode(panel) {
   parts.push(conf.node);
   parts.push(section("comptes", el("h2", { text: t("m_comptes") }), el("div", { class: "table-view" }, el("table", { class: "wrap-cells" },
     el("thead", {}, el("tr", {}, [t("th_candidate"), t("th_account"), t("th_status"), t("th_last"), t("th_note")].map((h) => el("th", { text: h })))),
-    el("tbody", {}, [...S.cands].sort(byName).map((c) => el("tr", {},
+    el("tbody", {}, [...S.cands].sort((a, b) => byBloc(a.key, b.key)).map((c) => el("tr", {},
       el("td", {}, el("span", { class: "who-inline" }, avatar(c.key, 20), c.name)),
       el("td", {}, c.handle ? el("a", { href: `https://x.com/${c.handle}`, target: "_blank", rel: "noopener", text: "@" + c.handle }) : t("none_m")),
       el("td", { text: accountText(c.compte) }), el("td", { text: c.dernier_tweet ? fmtDay(c.dernier_tweet) : "–" }), el("td", { text: L(c, "note") }))))))));
@@ -1376,40 +1403,54 @@ function gameAvailable(key) {
 }
 // Tirage qui alterne les candidats, pour ne pas enchaîner les tweets d'un même auteur
 function pickSpread(items, n, rnd = Math.random) {
+  items = [...items].sort((a, b) => (a.i < b.i ? -1 : 1)); // ordre stable, pour que la graine suffise
   const by = new Map();
   for (const it of shuffle(items, rnd)) { if (!by.has(it.c)) by.set(it.c, []); by.get(it.c).push(it); }
   const out = [];
   while (out.length < n && [...by.values()].some((l) => l.length)) for (const l of shuffle([...by.values()], rnd)) { if (l.length && out.length < n) out.push(l.pop()); }
   return out;
 }
-function newGame(key) {
+// Générateur pseudo-aléatoire à graine : le défi du jour tire les mêmes tweets pour tout le monde
+function seeded(text) {
+  let h = 1779033703 ^ text.length;
+  for (let i = 0; i < text.length; i++) { h = Math.imul(h ^ text.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19); }
+  return () => { h |= 0; h = (h + 0x6d2b79f5) | 0; let x = Math.imul(h ^ (h >>> 15), 1 | h); x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x; return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
+}
+const today = () => new Date().toISOString().slice(0, 10);
+function newGame(key, daily = false) {
   if (!gameAvailable(key)) return null;
-  const g = GAMES[key], items = gameItems(key);
+  const g = GAMES[key], items = gameItems(key), rnd = daily ? seeded(`${today()}|${key}`) : Math.random;
+  const mix = (a) => shuffle(a, rnd);
   if (key === "qui") {
-    const pool = [...new Set(S.games.items.map((it) => it.c))];
-    return { key, i: 0, rounds: pickSpread(items, g.rounds).map((it) => {
+    const pool = [...new Set(S.games.items.map((it) => it.c))].sort();
+    return { key, daily, i: 0, rounds: pickSpread(items, g.rounds, rnd).map((it) => {
       const bloc = (S.cand.get(it.c) || {}).bloc;
-      const same = shuffle(pool.filter((k) => k !== it.c && (S.cand.get(k) || {}).bloc === bloc)).slice(0, 1);
-      const other = shuffle(pool.filter((k) => k !== it.c && !same.includes(k))).slice(0, 3 - same.length);
-      return { it, options: shuffle([it.c, ...same, ...other]), pick: null };
+      const same = mix(pool.filter((k) => k !== it.c && (S.cand.get(k) || {}).bloc === bloc)).slice(0, 1);
+      const other = mix(pool.filter((k) => k !== it.c && !same.includes(k))).slice(0, 3 - same.length);
+      return { it, options: mix([it.c, ...same, ...other]), pick: null, hint: false };
     }) };
   }
   if (key === "agent") {
-    return { key, i: 0, rounds: pickSpread(items, g.rounds).map((it) => {
+    return { key, daily, i: 0, rounds: pickSpread(items, g.rounds, rnd).map((it) => {
       const pr = Object.entries(it.jev.procedes || {}).sort((a, b) => b[1] - a[1]);
-      return { it, procOpts: shuffle([...pr.slice(0, 3), ...shuffle(pr.slice(3)).slice(0, 3)].map(([k]) => k)), answer: null, agree: null };
+      return { it, procOpts: mix([...pr.slice(0, 3), ...mix(pr.slice(3)).slice(0, 3)].map(([k]) => k)), answer: null, agree: null };
     }) };
   }
   // Où vous situez-vous : strates position × signe du rapport à la croissance, tirées à tour de rôle
   const growth = growthMap();
   const strata = new Map();
   for (const it of items) { const k = `${it.codes.position}|${Math.sign(growth[it.codes.vision])}`; if (!strata.has(k)) strata.set(k, []); strata.get(k).push(it); }
-  const lists = [...strata.values()].map((l) => pickSpread(l, l.length));
+  const lists = [...strata.keys()].sort().map((k) => pickSpread(strata.get(k), strata.get(k).length, rnd));
   const out = [];
-  while (out.length < g.rounds && lists.some((l) => l.length)) for (const l of shuffle(lists)) if (l.length && out.length < g.rounds) out.push(l.shift());
-  return { key, i: 0, rounds: shuffle(out).map((it) => ({ it, r: undefined })) };
+  while (out.length < g.rounds && lists.some((l) => l.length)) for (const l of mix(lists)) if (l.length && out.length < g.rounds) out.push(l.shift());
+  return { key, daily, i: 0, rounds: mix(out).map((it) => ({ it, r: undefined })) };
 }
-function replay(key) { S.play = newGame(key); S.scrollTo = "top"; S.focusTo = "[data-autofocus]"; render(); }
+// Rejouer : de nouveaux tweets (le défi du jour, lui, ne change qu'une fois par jour)
+function replay(key) { if (S.play && S.play.daily) { go("jouer", key); return; } S.play = newGame(key); S.scrollTo = "top"; S.focusTo = "[data-autofocus]"; render(); }
+// Qui a tweeté : 1 point pour le bon auteur, ½ pour la bonne famille politique, ½ de moins avec l'indice
+const sameBloc = (a, b) => (S.cand.get(a) || {}).bloc === (S.cand.get(b) || {}).bloc;
+const quiPoints = (r) => (r.pick === null ? 0 : Math.max(0, (r.pick === r.it.c ? 1 : sameBloc(r.pick, r.it.c) ? 0.5 : 0) - (r.hint ? 0.5 : 0)));
+function quiStreak(P) { let n = 0; for (const r of P.rounds) { if (r.pick === null) break; n = r.pick === r.it.c ? n + 1 : 0; } return n; }
 function nextRound() { S.play.i++; S.scrollTo = { sel: ".game", block: "start" }; S.focusTo = "[data-autofocus]"; render(); }
 function answerQui(k) {
   const round = S.play.rounds[S.play.i];
@@ -1475,12 +1516,15 @@ function hint(parts) {
   return el("p", { class: "hint" }, t("shortcuts"), " ", parts.map(([keys, text], i) => [i ? " · " : "", keys.map((k, j) => [j ? " " : "", el("kbd", { text: k })]), " ", text]));
 }
 function scorePill(P) {
-  if (P.key === "qui") { const done = P.rounds.filter((r) => r.pick !== null); return el("span", { class: "score-pill", text: t("score_pill", { n: done.filter((r) => r.pick === r.it.c).length }) }); }
+  if (P.key === "qui") {
+    const streak = quiStreak(P);
+    return el("span", { class: "score-pill" }, t("score_pill", { n: num(P.rounds.reduce((a, r) => a + quiPoints(r), 0)) }), streak >= 2 ? el("span", { class: "streak", text: t("streak", { n: streak }) }) : null);
+  }
   if (P.key === "agent") { const done = P.rounds.filter((r) => r.answer); return done.length ? el("span", { class: "score-pill", text: t("agree_pill", { v: pct(mean(done, (r) => r.agree), 0) }) }) : null; }
   return null;
 }
 function roundClass(P, r) {
-  if (P.key === "qui") return r.pick === null ? "" : r.pick === r.it.c ? "ok" : "ko";
+  if (P.key === "qui") return r.pick === null ? "" : r.pick === r.it.c ? "ok" : sameBloc(r.pick, r.it.c) ? "half" : "ko";
   if (P.key === "agent") return r.answer ? "done" : "";
   return r.r !== undefined ? "done" : "";
 }
@@ -1488,13 +1532,13 @@ function gameTop(P) {
   const n = P.rounds.length;
   return el("div", { class: "game-top" },
     el("button", { class: "ghost-btn", type: "button", onclick: () => go("jouer") }, icon("arrowL", 16), t("all_games")),
-    el("span", { class: "game-title", text: t("g_" + P.key) }),
+    el("span", { class: "game-title" }, t("g_" + P.key), P.daily ? el("span", { class: "daily-tag", text: t("daily_tag", { date: fmtShort(today()) }) }) : null),
     el("div", { class: "dots", role: "img", "aria-label": P.i < n ? t("round_of", { i: P.i + 1, n }) : t("game_over") }, P.rounds.map((r, i) => el("i", { class: [roundClass(P, r), i === P.i ? "cur" : ""].join(" ").trim() || null }))),
     scorePill(P));
 }
 const tier = (x) => (x >= 0.75 ? t("tier_high") : x >= 0.4 ? t("tier_mid") : t("tier_low"));
 async function shareResult(key, text) {
-  const url = location.origin + location.pathname + (LANG === "en" ? "?lang=en" : "") + `#jouer/${key}`;
+  const url = location.origin + location.pathname + (LANG === "en" ? "?lang=en" : "") + `#jouer/${key}` + (S.play && S.play.daily ? "/jour" : "");
   if (navigator.share) {
     try { await navigator.share({ title: t("doc_title"), text, url }); return; } catch (e) { if (e && e.name === "AbortError") return; }
   }
@@ -1505,7 +1549,8 @@ function endButtons(key, share) {
   const i = GAME_KEYS.indexOf(key);
   const next = [1, 2].map((d) => GAME_KEYS[(i + d) % GAME_KEYS.length]).find(gameAvailable);
   return el("div", { class: "btn-row" },
-    el("button", { class: "primary-btn", type: "button", "data-autofocus": true, onclick: () => replay(key) }, icon("replay", 18), key === "situer" ? t("replay_other") : t("replay")),
+    el("button", { class: "primary-btn", type: "button", "data-autofocus": true, onclick: () => replay(key) }, icon("replay", 18),
+      S.play && S.play.daily ? t("replay_free") : key === "situer" ? t("replay_other") : t("replay")),
     next ? el("button", { class: "secondary-btn", type: "button", onclick: () => go("jouer", next) }, t("next_game", { name: t("g_" + next) })) : null,
     el("button", { class: "ghost-btn", type: "button", onclick: () => shareResult(key, share) }, icon("share", 16), t("share")));
 }
@@ -1527,9 +1572,11 @@ function theoriesCard(keys) {
 function renderQui(box, P) {
   const round = P.rounds[P.i];
   if (!round) {
-    const n = P.rounds.length, score = P.rounds.filter((r) => r.pick === r.it.c).length;
-    box.append(gameTop(P), endCard({ key: "qui", big: `${score}/${n}`, label: t("qui_end_label"), tierText: tier(n ? score / n : 0), text: t("qui_end_p"), share: t("share_qui", { score, n }) }),
-      recapCard(P.rounds.map((r) => ({ c: r.it.c, text: itemText(r.it), res: r.pick === r.it.c ? "ok" : "ko", label: r.pick === r.it.c ? "✓" : "✕" }))),
+    const n = P.rounds.length, score = P.rounds.reduce((a, r) => a + quiPoints(r), 0), best = Math.max(...P.rounds.map((r, i) => quiStreak({ rounds: P.rounds.slice(0, i + 1) })));
+    box.append(gameTop(P), endCard({ key: "qui", big: `${num(score)}/${n}`, label: t("qui_end_label"), tierText: tier(n ? score / n : 0),
+      text: t("qui_end_p"), extra: best >= 2 ? el("p", { class: "end-label", text: t("best_streak", { n: best }) }) : null,
+      share: t(P.daily ? "share_qui_daily" : "share_qui", { score: num(score), n, date: fmtShort(today()) }) }),
+      recapCard(P.rounds.map((r) => ({ c: r.it.c, text: itemText(r.it), res: r.pick === r.it.c ? "ok" : sameBloc(r.pick, r.it.c) ? "half" : "ko", label: num(quiPoints(r)) }))),
       theoriesCard(["carre", "cadrage", "topoi", "procedes", "visions", "retardement"]));
     return;
   }
@@ -1541,10 +1588,18 @@ function renderQui(box, P) {
       return el("button", { class: "choice" + cls, type: "button", disabled: answered ? true : null, "data-autofocus": !answered && idx === 0 ? true : null, onclick: () => answerQui(k) },
         avatar(k, 44), el("span", {}, c.name, el("span", { class: "sub2", text: L(c, "party") })), el("span", { class: "k", "aria-hidden": "true", text: String(idx + 1) }));
     })));
-  if (!answered) { box.append(hint([[["1", "2", "3", "4"], t("hint_answer")]])); return; }
-  const good = round.pick === round.it.c, c = S.cand.get(round.it.c);
+  if (!answered) {
+    const clue = cluesFor(round.it)[0];
+    box.append(round.hint ? el("div", { class: "hint-box", role: "status" }, el("strong", { text: t("hint_title") }), el("ul", {}, clue))
+      : el("div", { class: "skip-row" }, el("button", { class: "ghost-btn", type: "button", onclick: () => { round.hint = true; render(); } }, t("hint_btn"))),
+      hint([[["1", "2", "3", "4"], t("hint_answer")]]));
+    return;
+  }
+  const good = round.pick === round.it.c, half = !good && sameBloc(round.pick, round.it.c), c = S.cand.get(round.it.c);
   box.append(el("div", { class: "reveal", id: "reveal" },
-    el("div", { class: `verdict ${good ? "good" : "bad"}`, role: "status" }, el("span", { class: "ico", "aria-hidden": "true", text: good ? "✓" : "✕" }), good ? t("qui_right") : t("qui_wrong", { name: c.name })),
+    el("div", { class: `verdict ${good ? "good" : half ? "half" : "bad"}`, role: "status" }, el("span", { class: "ico", "aria-hidden": "true", text: good ? "✓" : half ? "½" : "✕" }),
+      good ? t("qui_right") : half ? t("qui_family", { name: c.name, family: blocLabel(c.bloc) }) : t("qui_wrong", { name: c.name })),
+    el("p", { class: "note-small", text: t("qui_points", { n: num(quiPoints(round)) }) + (round.hint ? " " + t("qui_hint_cost") : "") + (good && quiStreak(P) >= 2 ? " " + t("streak", { n: quiStreak(P) }) : "") }),
     el("p", {}, `${c.name}, ${L(c, "party")}. `, originalLink(round.it)),
     el("h3", { text: t("clues_title") }), el("ul", {}, cluesFor(round.it)),
     el("div", { class: "btn-row" }, el("button", { class: "primary-btn", id: "next-btn", type: "button", onclick: nextRound }, P.i + 1 < P.rounds.length ? t("next_tweet") : t("see_score"), icon("arrowR", 18))),
@@ -1569,6 +1624,16 @@ function compareBlock(title, fwKey, varKey, probs, mine, claude, keys) {
         el("div", { class: "track" }, el("div", { class: "fill", style: `width:${p * 100}%` })), el("span", { class: "num", text: pct(p, 0) })];
     })),
     el("p", { class: "note-small", text: (keys || !jevPick ? t("cmp_jev") : t("cmp_jev_pick", { v: optLabel(varKey, jevPick) })) + (claudeText ? " " + t("cmp_claude", { v: claudeText }) : "") }));
+}
+// Définitions des catégories en jeu : le choix du joueur et celui de Jev, quand ils diffèrent
+function codebookNotes(it, answer) {
+  const top = (probs) => (Object.entries(probs || {}).sort((a, b) => b[1] - a[1])[0] || [])[0];
+  const items = [];
+  for (const v of ["position", "cadrage"]) {
+    const keys = [...new Set([answer[v], top(it.jev[v])])].filter((k) => k && !NULLISH.has(k));
+    for (const k of keys) { const def = optDef(v, k) || (opt(v, k) || {}).en; if (def) items.push(el("li", {}, el("strong", { text: optLabel(v, k) }), t("colon"), def)); }
+  }
+  return items.length ? el("details", { class: "fold" }, el("summary", { text: t("codebook_says") }), el("ul", {}, items)) : null;
 }
 function renderAgent(box, P) {
   const round = P.rounds[P.i];
@@ -1603,6 +1668,7 @@ function renderAgent(box, P) {
     compareBlock(t("cmp_position"), "cadrage", "position", it.jev.position, round.answer.position, cl.position),
     compareBlock(t("cmp_frame"), "cadrage", "cadrage", it.jev.cadrage, round.answer.cadrage, cl.cadrage),
     round.procOpts.length ? compareBlock(t("cmp_devices"), "procedes", "procedes", it.jev.procedes || {}, round.answer.procedes, cl.procedes ? cl.procedes.filter((k) => round.procOpts.includes(k)) : null, round.procOpts) : null,
+    codebookNotes(it, round.answer),
     el("p", {}, t("author_is", { name: candName(it.c) }), " ", originalLink(it)),
     el("div", { class: "btn-row" }, el("button", { class: "primary-btn", id: "next-btn", type: "button", onclick: nextRound }, P.i + 1 < P.rounds.length ? t("next_tweet") : t("see_summary"), icon("arrowR", 18))),
     hint([[[t("key_enter")], t("hint_next")]])));
@@ -1682,13 +1748,16 @@ function renderJouer(panel) {
       el("div", { class: "game-body" },
         el("h3", { text: t("g_" + k) }), el("p", { text: t(`g_${k}_text`) }),
         el("div", { class: "game-meta" }, el("span", { class: "badge", text: tn("n_rounds", g.rounds) }), el("span", { class: "badge", text: t("minutes", { n: g.minutes }) }), el("span", { class: "badge", text: t(`g_${k}_level`) })),
-        el("button", { class: "primary-btn", type: "button", disabled: ok ? null : true, onclick: () => go("jouer", k) }, icon("play", 18), t("play_btn")),
+        el("div", { class: "card-btns" },
+          el("button", { class: "primary-btn", type: "button", disabled: ok ? null : true, onclick: () => go("jouer", k) }, icon("play", 18), t("play_btn")),
+          el("button", { class: "secondary-btn", type: "button", disabled: ok ? null : true, title: t("daily_hint"), onclick: () => go("jouer", `${k}/jour`) }, t("daily_btn"))),
         ok ? null : el("p", { class: "note-small", text: t("game_unavailable") })));
   });
   const nFw = DISCOURS_ORDER.filter((k) => S.fw.has(k)).length;
   panel.append(
     sectionIntro(t("play_title"), t("play_intro")),
     el("div", { class: "game-cards" }, cards),
+    el("p", { class: "note-small daily-note", text: t("daily_hint") }),
     el("div", { class: "steps-row" }, [1, 2, 3].map((i) => el("div", { class: "step" }, el("span", { class: "n", text: String(i) }), el("div", {}, el("h3", { text: t(`step${i}_t`) }), el("p", { text: t(`step${i}_p`) }))))),
     el("section", { class: "learn" }, el("h3", { text: t("learn_title") }),
       el("div", { class: "chips" }, ["carre", "cadrage", "topoi", "procedes", "retardement", "visions", "boussole"].filter((k) => S.fw.has(k)).map((k) => el("span", { class: "chip" }, fwLabel(k), infoBtn(k))))),
@@ -1724,7 +1793,7 @@ function heroFaces() {
     if (c.photo && c.photo.url) {
       const img = el("img", { src: c.photo.url, alt: "", decoding: "async", referrerpolicy: "no-referrer" });
       img.addEventListener("error", () => b.replaceChildren(el("span", { class: "ini", text: initials(c.name) })));
-      b.append(img);
+      b.append(framePhoto(img, c.photo.cadrage));
     } else b.append(el("span", { class: "ini", text: initials(c.name) }));
     return b;
   }));
@@ -1837,10 +1906,11 @@ function go(tab, sub) {
   if (location.hash === h) onHash(); else location.hash = h;
 }
 function readHash() {
-  const [tab, sub = ""] = location.hash.replace(/^#/, "").split("/");
+  const [tab, sub = "", extra = ""] = location.hash.replace(/^#/, "").split("/");
   S.tab = TABS.some(([k]) => k === tab) ? tab : "jouer";
   if (S.tab === "discours" && DISCOURS_ORDER.includes(sub) && S.fw.has(sub)) { if (S.discours !== sub) S.selectedCell = null; S.discours = sub; }
-  if (S.tab === "jouer" && GAME_KEYS.includes(sub)) { if (!S.play || S.play.key !== sub) { S.play = newGame(sub); S.focusTo = "[data-autofocus]"; } }
+  const daily = extra === "jour";
+  if (S.tab === "jouer" && GAME_KEYS.includes(sub)) { if (!S.play || S.play.key !== sub || S.play.daily !== daily) { S.play = newGame(sub, daily); S.focusTo = "[data-autofocus]"; } }
   else S.play = null;
   return sub;
 }
