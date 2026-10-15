@@ -5,6 +5,7 @@ description = "Extraction des tweets des candidats à la présidentielle 2027 et
 requires-python = ">=3.10"
 dependencies = [
     "anthropic>=1.14.0",
+    "typesafe-sdk>=0.7.5",
     "requests>=2.31",
     "pandas>=2.2",
     "pydantic>=2.6",

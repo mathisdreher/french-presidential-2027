@@ -59,8 +59,8 @@ candidates:
   - name: Dominique de Villepin
     party: La France humaniste
     handle: Villepin
-    status: pressenti
-    enabled: false
+    status: pressenti   # a annoncé qu'il confirmera à l'ouverture de la campagne (BFM, août 2026)
+    enabled: true
 
   # --- Gauche, écologistes, extrême gauche ---
   - name: Raphaël Glucksmann
