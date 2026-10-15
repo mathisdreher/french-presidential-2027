@@ -5,6 +5,10 @@ Stratégie par compte :
     via la recherche full-archive (pas de plafond de volume) ; repli sur la timeline
     si la recherche n'est pas accessible (HTTP 401/403) ;
   - déjà collecté : timeline depuis le dernier tweet vu (since_id).
+
+Seuls les tweets « mûrs », publiés il y a au moins 48 heures, sont collectés : leurs métriques
+d'engagement sont alors stabilisées, et chaque tweet n'est lu qu'une fois (une lecture facturée
+par l'API X). Contrepartie : un tweet apparaît sur le site deux jours après sa publication.
 """
 
 from __future__ import annotations
@@ -18,6 +22,27 @@ from .storage import append_jsonl, load_json, read_jsonl, save_json
 from .x_client import XClient, XApiError, author_query, full_text
 
 log = logging.getLogger(__name__)
+
+MATURE_HOURS = 48
+# Collectes faites avant l'horodatage des tweets : les deux premiers passages, le 15 octobre 2026 vers 2 h UTC
+LEGACY_FETCHED_AT = "2026-10-15T02:00:00Z"
+TWITTER_EPOCH_MS = 1288834974657
+
+
+def snowflake_time(tweet_id: str) -> datetime:
+    """Date de publication encodée dans l'identifiant d'un tweet."""
+    return datetime.fromtimestamp(((int(tweet_id) >> 22) + TWITTER_EPOCH_MS) / 1000, tz=timezone.utc)
+
+
+def _parse(ts: str) -> datetime:
+    return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+
+
+def age_at_fetch(row: dict) -> Optional[float]:
+    """Âge du tweet, en heures, au moment où ses métriques ont été relevées par la collecte."""
+    if not row.get("created_at"):
+        return None
+    return (_parse(row.get("fetched_at") or LEGACY_FETCHED_AT) - _parse(row["created_at"])).total_seconds() / 3600
 
 
 def account_status(entry: dict | None) -> str:
@@ -81,9 +106,13 @@ def fetch(client: XClient, candidates: list[config.Candidate], *, days: Optional
           since: Optional[datetime] = None, until: Optional[datetime] = None,
           max_pages: Optional[int] = None, include_replies: bool = False,
           include_retweets: bool = False, incremental: bool = True, backfill: bool = False,
-          study_start: Optional[datetime] = None) -> int:
-    """Collecte les tweets. Sans date explicite, la fenêtre part du début de l'étude."""
+          study_start: Optional[datetime] = None, mature_hours: int = MATURE_HOURS, now: Optional[datetime] = None) -> int:
+    """Collecte les tweets d'au moins `mature_hours` heures. Sans date explicite, la fenêtre part du début de l'étude."""
     config.ensure_dirs()
+    now = now or datetime.now(timezone.utc)
+    if mature_hours:
+        cutoff = now - timedelta(hours=mature_hours)
+        until = min(until, cutoff) if until else cutoff
     users = resolve_users(client, candidates)
     since_ids: dict[str, str] = load_json(config.SINCE_STATE_FILE, {}) if incremental else {}
     known_ids = {row["id"] for row in read_jsonl(config.RAW_TWEETS_FILE)}
@@ -101,6 +130,9 @@ def fetch(client: XClient, candidates: list[config.Candidate], *, days: Optional
         if account_status(user) != "ok":
             continue
         since_id = None if backfill else since_ids.get(cand.slug)
+        if since_id and until and snowflake_time(since_id) >= until:
+            log.info("[%s] aucun nouveau tweet de plus de %d heures", cand.name, mature_hours)
+            continue
         new_rows = []
         newest_id = since_ids.get(cand.slug)
 

@@ -22,7 +22,9 @@ class FakeClient:
 def _tweets(tmp_data):
     rows = [{"id": "old", "handle": "a", "created_at": "2026-10-15T08:00:00.000Z"},
             {"id": "gone", "handle": "a", "created_at": "2026-10-14T08:00:00.000Z"},
-            {"id": "fresh", "handle": "a", "created_at": "2026-10-19T20:00:00.000Z"}]
+            {"id": "fresh", "handle": "a", "created_at": "2026-10-19T20:00:00.000Z"},
+            {"id": "mature", "handle": "a", "created_at": "2026-10-01T08:00:00.000Z"},  # collecté à 13 jours : pas de relecture
+            {"id": "late", "handle": "a", "created_at": "2026-10-17T08:00:00.000Z", "fetched_at": "2026-10-19T09:00:00Z"}]
     append_jsonl(config.RAW_TWEETS_FILE, rows)
 
 
@@ -32,7 +34,7 @@ def test_h48_reads_only_tweets_older_than_48h_once(tmp_data):
     assert metrics.run_h48(client, now=NOW) == 1
     store = load_json(config.METRICS_FILE, {})
     assert store["old"]["h48"]["likes"] == 10 and store["old"]["h48"]["bookmarks"] == 4 and store["old"]["h48"]["age_h"] == 124
-    assert store["gone"]["h48"]["absent"] and "fresh" not in store
+    assert store["gone"]["h48"]["absent"] and "fresh" not in store and "mature" not in store and "late" not in store
     assert metrics.run_h48(client, now=NOW) == 0 and len(client.calls) == 1  # ni relu, ni retenté
     # la réactualisation ne touche pas la mesure de référence
     metrics.refresh(client, now=NOW)
@@ -86,3 +88,32 @@ def test_lexique_ignores_english_single_tweets_and_own_name():
     assert "nucléaire" not in [w for w, *_ in out["candidats"]["b"]]  # un seul tweet, si long soit-il
     assert out["corpus"]["tweets_autre_langue"] == 3
     assert all(len(k) == 4 and k[3] >= 2 for k in out["candidats"]["a"])
+
+
+def test_fetch_collects_only_mature_tweets(tmp_data, monkeypatch):
+    from presidentielle import fetch
+
+    class Client:
+        def __init__(self):
+            self.calls = []
+
+        def get_user_by_username(self, handle):
+            return {"id": "42", "username": handle}
+
+        def iter_search_all(self, query, **kw):
+            self.calls.append(("search", kw))
+            return iter([])
+
+        def iter_user_tweets(self, uid, **kw):
+            self.calls.append(("timeline", kw))
+            return iter([])
+
+    cands = [config.Candidate(name="A", party="P", handle="a"), config.Candidate(name="B", party="P", handle="b")]
+    # b a déjà un curseur sur un tweet publié il y a moins de 48 h : rien à demander à X
+    recent_id = str(((int(NOW.timestamp() * 1000) - 3600_000) - fetch.TWITTER_EPOCH_MS) << 22)
+    save_json(config.SINCE_STATE_FILE, {"b": recent_id})
+    client = Client()
+    fetch.fetch(client, cands, now=NOW)
+    assert len(client.calls) == 1 and client.calls[0][0] == "search"
+    assert client.calls[0][1]["end_time"] == datetime(2026, 10, 18, 12, tzinfo=timezone.utc)
+    assert abs((fetch.snowflake_time(recent_id) - NOW).total_seconds() + 3600) < 1

@@ -1,7 +1,7 @@
 name: Collecte quotidienne
 
 # Chaque jour : purge des comptes retirés, nouveaux tweets (rattrapage complet pour tout compte
-# jamais collecté), mesures d'engagement à 48 h,
+# jamais collecté), tweets de plus de 48 h seulement (métriques stabilisées, une seule lecture X),
 # codage Jev, récupération des lots Claude terminés, validation, export, puis site.
 # Les données vivent dans le dépôt privé <ce dépôt>-data (ou la variable DATA_REPO).
 on:

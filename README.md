@@ -12,10 +12,12 @@ chaque théorie y est expliquée et sourcée, et trois jeux permettent de s'exer
    par la recherche full-archive de l'API X, sans plafond. Un compte retiré de la liste est purgé de
    toutes les données au passage suivant (l'historique git du dépôt de données permet de revenir en
    arrière).
-2. **Engagement.** Chaque tweet est relu une fois 48 heures après sa publication pour mesurer j'aime,
-   reposts, réponses, citations, signets et vues au même âge (`data/raw/metrics.json`). Le site en tire
-   un engagement relatif : les interactions d'un tweet rapportées à l'habitude de son auteur. Des
-   réactualisations ponctuelles se lancent à la main, sans toucher à la mesure de référence.
+2. **Engagement.** La collecte ne lit que les tweets publiés depuis au moins 48 heures : j'aime,
+   reposts, réponses, citations, signets et vues sont alors stabilisés, et chaque tweet n'est payé
+   qu'une fois. Un tweet apparaît donc sur le site deux jours après sa publication. Le site en tire un
+   engagement relatif : les interactions d'un tweet rapportées à l'habitude de son auteur. Seuls les
+   tweets collectés trop jeunes (premiers passages, ou `fetch --fresh`) sont relus une fois à 48 h
+   (`data/raw/metrics.json`). Des réactualisations ponctuelles se lancent à la main.
 3. **Codage.** Une grille de 19 variables tirée de onze cadres théoriques : macrostructures et carré
    idéologique (van Dijk), cadrage (Entman), topoï (Wodak), légitimation (van Leeuwen), discours de
    retardement climatique (Lamb et al.), visions de l'écologie (Dryzek), ethos (Maingueneau, Amossy),
@@ -87,7 +89,7 @@ dépenses dans chaque console, et ne collez jamais une clé dans un fichier ou u
 
 | Workflow | Déclenchement | Rôle |
 |---|---|---|
-| Collecte quotidienne | chaque jour à 05:17 UTC, ou à la main | purge, collecte, mesures à 48 h, Jev, lots Claude terminés, validation, export, site |
+| Collecte quotidienne | chaque jour à 05:17 UTC, ou à la main | purge, collecte des tweets de plus de 48 h, relectures éventuelles, Jev, lots Claude terminés, validation, export, site |
 | Codage Claude | à la main | Claude sur une portée : `ecologie_et_incertains`, `incertains`, `echantillon`, `jeux` ou `tous` |
 | Réactualiser l'engagement | à la main | relit les métriques d'une période ou d'un candidat, avec un plafond de tweets relus |
 | Publier le site | modification du code ou de la configuration | republie le site |
@@ -121,7 +123,7 @@ Hypothèse : 21 comptes, environ 100 tweets originaux par jour, soit 25 000 twee
 | Poste | Par mois | Étude complète |
 |---|---|---|
 | API X, environ 0,005 $ par tweet lu | ~15 $ | ~125 $ |
-| API X, relecture de chaque tweet à 48 h | ~15 $ | ~125 $, plus ~15 $ une fois pour les tweets déjà collectés |
+| API X, relecture à 48 h des seuls tweets collectés trop jeunes | | ~1 $, une fois |
 | API X, réactualisations manuelles | selon usage, plafonnées | |
 | Jev, environ 5 500 tokens par tweet à 0,042 $ par million | < 1 $ | ~6 $ |
 | Claude en lot, écologie et décisions incertaines, environ 25 % des tweets | ~8 à 15 $ | ~60 à 120 $ |

@@ -30,6 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument("--max-pages", type=int, help="Plafond de pages par candidat")
     f.add_argument("--candidate", help="Handle ou nom d'un seul candidat")
     f.add_argument("--backfill", action="store_true", help="Refaire le rattrapage complet (doublons ignorés)")
+    f.add_argument("--fresh", action="store_true", help="Collecter aussi les tweets de moins de 48 h (métriques provisoires, relues plus tard)")
 
     c = sub.add_parser("classify", help="Coder les tweets : Jev par défaut, Claude à la demande")
     c.add_argument("--engine", choices=["jev", "claude"], default="jev")
@@ -131,7 +132,7 @@ def main(argv=None) -> int:
         client = XClient(config.x_bearer_token())
         if args.cmd == "fetch":
             fetch.fetch(client, cands, days=args.days, since=args.since, until=args.until,
-                        max_pages=args.max_pages, backfill=args.backfill)
+                        max_pages=args.max_pages, backfill=args.backfill, mature_hours=0 if args.fresh else fetch.MATURE_HOURS)
             return 0
         from . import metrics, purge
         purge.run()

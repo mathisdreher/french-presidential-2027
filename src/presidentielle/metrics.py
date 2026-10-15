@@ -1,11 +1,10 @@
-"""Mesures d'engagement : relecture des tweets 48 heures après leur publication.
+"""Mesures d'engagement : métriques relevées sur des tweets d'au moins 48 heures.
 
 Les métriques publiques d'un tweet (j'aime, reposts, réponses, citations, signets, vues) montent
-pendant un à deux jours. La collecte quotidienne lit un tweet quelques heures après sa
-publication : ses chiffres ne sont pas comparables d'un tweet à l'autre. Chaque tweet est donc
-relu une fois qu'il a 48 heures, par la tâche quotidienne : c'est la mesure de référence (« h48 »),
-jamais écrasée. Les tweets antérieurs à cette fonction sont relus au premier passage, plus tard
-que 48 heures ; leur âge au moment de la mesure est conservé.
+pendant un à deux jours. La collecte ne lit que des tweets d'au moins 48 heures : la mesure prise à
+la collecte est donc la mesure de référence, sans seconde lecture. Seuls les tweets collectés trop
+jeunes (avant ce fonctionnement, ou par une collecte manuelle --fresh) sont relus une fois, à 48 h
+(« h48 »).
 
 Une réactualisation manuelle (« maj ») relit une période choisie, par exemple pour suivre un
 tweet devenu viral, sans toucher à la mesure de référence.
@@ -21,6 +20,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from . import config
+from .fetch import age_at_fetch
 from .storage import load_json, read_jsonl
 from .x_client import MAX_RESULTS, XClient
 
@@ -55,11 +55,17 @@ def measure(public_metrics: dict, created_at: Optional[str], now: datetime) -> d
     return out
 
 
+def mature_at_collection(row: dict) -> bool:
+    age = age_at_fetch(row)
+    return age is not None and age >= MIN_AGE_HOURS
+
+
 def due(tweets: list[dict], store: dict, now: datetime) -> list[str]:
-    """Tweets d'au moins 48 heures sans mesure de référence."""
+    """Tweets collectés trop jeunes, qui ont maintenant 48 heures et pas encore de mesure de référence."""
     limit = now - timedelta(hours=MIN_AGE_HOURS)
     return [t["id"] for t in tweets
-            if t.get("created_at") and _parse(t["created_at"]) <= limit and "h48" not in store.get(t["id"], {})]
+            if t.get("created_at") and _parse(t["created_at"]) <= limit and not mature_at_collection(t)
+            and "h48" not in store.get(t["id"], {})]
 
 
 def _read(client: XClient, ids: list[str], slot: str, store: dict, created: dict[str, str], now: datetime) -> int:

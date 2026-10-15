@@ -43,7 +43,7 @@ def test_payload_engagement_and_confidence(tmp_path):
     rows = {r["i"]: r for r in _decode(data)}
     assert {"rp", "qt", "bm", "vw", "ma", "cj"} <= set(data["tweets"]["cols"])
     assert (rows["1001"]["l"], rows["1001"]["bm"], rows["1001"]["vw"], rows["1001"]["ma"]) == (5, 3, 700, 50)
-    assert rows["1002"]["l"] == 800 and rows["1002"]["ma"] is None  # chiffres de la collecte, pas de mesure à 48 h
+    assert rows["1002"]["l"] == 800 and rows["1002"]["ma"] == 305  # collecté mûr : la mesure de la collecte fait foi
     assert data["maj"]["1001"] == ["2026-10-10", 9, 999]
     assert rows["1001"]["cj"] == 2 and "parle_ecologie" in data["confiance"]
 

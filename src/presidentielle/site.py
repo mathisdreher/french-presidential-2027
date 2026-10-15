@@ -20,7 +20,7 @@ from typing import Optional
 from . import codebook as cb
 from . import codebook_en as en
 from . import config, games, lexique, photos
-from .fetch import account_status
+from .fetch import account_status, age_at_fetch
 from .jev_client import level, tweet_level
 from .storage import load_json, read_jsonl
 
@@ -137,9 +137,12 @@ def payload(raw_path: Path | None = None, cls_path: Path | None = None, validati
         m = measures.get(t["id"]) or {}
         h48 = m.get("h48") if m.get("h48") and not m["h48"].get("absent") else None
         src = h48 or t
+        # âge à la mesure : relecture à 48 h, ou collecte d'un tweet déjà mûr ; vide si chiffres provisoires
+        age = h48.get("age_h") if h48 else age_at_fetch(t)
+        mature = age if age is not None and age >= 48 else None
         row = [t["id"], index[slug], day, 1 if eco else 0, None if p is None else round(p, 3),
                (r.get("final_source") or "j")[:1], src.get("likes") or 0, src.get("retweets") or 0, src.get("replies") or 0,
-               src.get("quotes") or 0, src.get("bookmarks") or 0, src.get("impressions"), h48.get("age_h") if h48 else None,
+               src.get("quotes") or 0, src.get("bookmarks") or 0, src.get("impressions"), None if mature is None else round(mature),
                tweet_level(r["jev"]) if r.get("jev") else None]
         if m.get("maj") and not m["maj"].get("absent"):
             refreshed[t["id"]] = [m["maj"]["at"][:10], m["maj"].get("likes"), m["maj"].get("impressions")]
