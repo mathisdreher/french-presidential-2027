@@ -49,6 +49,8 @@ class Candidate:
     enabled: bool = True
     wikipedia: str = ""            # titre de la page Wikipédia (photo), par défaut le nom
     note: str = ""                 # signalement affiché sur le site
+    party_en: str = ""             # version anglaise du site, si le nom du parti se traduit
+    note_en: str = ""
 
     @property
     def slug(self) -> str:
@@ -77,6 +79,8 @@ def load_candidates(path: Path = CANDIDATES_FILE, only_enabled: bool = True) -> 
             enabled=bool(item.get("enabled", True)),
             wikipedia=item.get("wikipedia", "") or item["name"],
             note=item.get("note", ""),
+            party_en=item.get("party_en", ""),
+            note_en=item.get("note_en", ""),
         )
         if only_enabled and not cand.enabled:
             continue

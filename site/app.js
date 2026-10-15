@@ -1,6 +1,10 @@
 "use strict";
-/* L'écologie dans la campagne sur X : site statique, sans dépendance.
-   Les agrégats sont calculés dans le navigateur à partir de data.json. */
+/* L'écologie dans la campagne 2027 : site statique, sans dépendance, en français et en anglais.
+   Les agrégats sont calculés dans le navigateur à partir de data.json ; les jeux lisent games.json.
+   Les textes d'interface sont dans i18n.js, le livre de codes exporté fournit ses propres champs *_en.
+   Convention : les tweets sont nommés « tw » pour ne pas masquer la fonction de traduction t(). */
+
+const REPO_URL = "https://github.com/mathisdreher/french-presidential-2027";
 
 /* =================================================================== utilitaires */
 // append et replaceChildren ignorent null, undefined et false, et aplatissent les tableaux
@@ -22,39 +26,106 @@ function el(tag, attrs, ...children) {
   for (const c of children.flat(Infinity)) if (c !== null && c !== undefined && c !== false) node.append(c instanceof Node ? c : document.createTextNode(String(c)));
   return node;
 }
-const SVG = "http://www.w3.org/2000/svg";
+const SVGNS = "http://www.w3.org/2000/svg";
 function svg(tag, attrs) {
-  const node = document.createElementNS(SVG, tag);
+  const node = document.createElementNS(SVGNS, tag);
   for (const [k, v] of Object.entries(attrs || {})) if (v !== null && v !== undefined) node.setAttribute(k, v);
   return node;
 }
-const NF = new Intl.NumberFormat("fr-FR");
-const PF = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 });
-const PF0 = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
-const F2 = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const pct = (x, digits = 1) => (digits ? PF : PF0).format(100 * x) + " %";
-const num = (x) => NF.format(x);
-const DF = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
-const DFS = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", timeZone: "UTC" });
-const parseDay = (s) => new Date(s + "T00:00:00Z");
-const fmtDay = (s) => DF.format(parseDay(s)).replace(/^1 /, "1er ");
-const fmtShort = (s) => DFS.format(parseDay(s));
-const isoDay = (d) => d.toISOString().slice(0, 10);
-function weekStart(day) { const d = parseDay(day); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return isoDay(d); }
-function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+const ICONS = {
+  play: '<rect x="2" y="6" width="20" height="12" rx="6"/><path d="M6.5 12h4M8.5 10v4"/><circle cx="15.5" cy="10.8" r="1" fill="currentColor" stroke="none"/><circle cx="18" cy="13.4" r="1" fill="currentColor" stroke="none"/>',
+  chart: '<path d="M3 20h18"/><path d="M6 16v-4M10 16V6M14 16V9M18 16v-6"/>',
+  talk: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.4A8 8 0 1 1 21 12z"/>',
+  words: '<path d="M4 7V5h16v2M9 19h6M12 5v14"/>',
+  list: '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01" stroke-width="3"/>',
+  book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
+  share: '<path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M16 6l-4-4-4 4M12 2v13"/>',
+  up: '<path d="M7 10v11H3V10z"/><path d="M7 10l4-8a3 3 0 0 1 3 3v4h5.5a2 2 0 0 1 2 2.3l-1.3 8A2 2 0 0 1 18.2 21H7"/>',
+  down: '<path d="M17 14V3h4v11z"/><path d="M17 14l-4 8a3 3 0 0 1-3-3v-4H4.5a2 2 0 0 1-2-2.3l1.3-8A2 2 0 0 1 5.8 3H17"/>',
+  mixed: '<path d="M5 9h14M5 15h14"/>',
+  arrowL: '<path d="M19 12H5M12 19l-7-7 7-7"/>',
+  arrowR: '<path d="M5 12h14M12 5l7 7-7 7"/>',
+  replay: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
+  filter: '<path d="M3 5h18l-7 8v6l-4 2v-8z"/>',
+};
+function icon(name, size = 18) {
+  const s = svg("svg", { viewBox: "0 0 24 24", width: size, height: size, fill: "none", stroke: "currentColor", "stroke-width": 2, "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true", focusable: "false" });
+  s.innerHTML = ICONS[name];
+  return s;
+}
+function logo(size = 30) {
+  const s = svg("svg", { viewBox: "0 0 32 32", width: size, height: size, "aria-hidden": "true", focusable: "false" });
+  s.innerHTML = '<rect width="32" height="32" rx="9" style="fill:var(--accent)"/><path d="M9 22c0-8 5-12 14-13-1 9-5 14-12 14" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>';
+  return s;
+}
+// « **texte** » devient du gras
+const rich = (text) => text.split("**").map((part, i) => (i % 2 ? el("strong", { text: part }) : part));
+function debounce(fn, ms) { let h; return (...a) => { clearTimeout(h); h = setTimeout(() => fn(...a), ms); }; }
 function shuffle(arr, rnd = Math.random) { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
+const mean = (xs, f) => (xs.length ? xs.reduce((a, x) => a + f(x), 0) / xs.length : 0);
+const smooth = () => (matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
 const NULLISH = new Set(["non_applicable", "aucun", "aucune", "indetermine"]);
+const STANCE = { favorable_transition: 1, critique_ecologie: -1 };
 const MIN_N = 20;
 const MIN_N_SCALE = 10;
+const COMPASS_MIN = 8;
+const COMPASS_MIN_VISION = 3;
+const CHIP_LIMIT = 6;
+
+/* =================================================================== langue */
+const MESSAGES = window.MESSAGES || { fr: {}, en: {} };
+const LANGS = ["fr", "en"];
+let LANG = "fr";
+let FMT = null;
+function t(key, vars) {
+  let s = MESSAGES[LANG][key];
+  if (s === undefined) s = MESSAGES.fr[key];
+  if (s === undefined) return key;
+  return vars ? s.replace(/\{(\w+)\}/g, (m, k) => (vars[k] === undefined ? m : vars[k])) : s;
+}
+// Accord en nombre : en français, 0 et 1 sont au singulier
+function tn(key, n, vars) {
+  const one = LANG === "fr" ? Math.abs(n) < 2 : n === 1;
+  return t(`${key}_${one ? "one" : "other"}`, { n: num(n), ...vars });
+}
+// Champ traduit d'un objet de données : label -> label_en en anglais, s'il existe
+const L = (o, f) => (o ? (LANG === "en" && o[f + "_en"]) || o[f] || "" : "");
+function setupFormats() {
+  const loc = LANG === "fr" ? "fr-FR" : "en-GB";
+  FMT = {
+    n: new Intl.NumberFormat(loc),
+    p1: new Intl.NumberFormat(loc, { maximumFractionDigits: 1 }),
+    p0: new Intl.NumberFormat(loc, { maximumFractionDigits: 0 }),
+    f2: new Intl.NumberFormat(loc, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    s2: new Intl.NumberFormat(loc, { minimumFractionDigits: 2, maximumFractionDigits: 2, signDisplay: "exceptZero" }),
+    day: new Intl.DateTimeFormat(loc, { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }),
+    short: new Intl.DateTimeFormat(loc, { day: "numeric", month: "short", timeZone: "UTC" }),
+    coll: new Intl.Collator(loc),
+  };
+}
+const num = (x) => FMT.n.format(x);
+const pct = (x, digits = 1) => (digits ? FMT.p1 : FMT.p0).format(100 * x) + (LANG === "fr" ? " %" : "%");
+const f2 = (x) => FMT.f2.format(x);
+const signed = (x) => FMT.s2.format(Math.abs(x) < 0.005 ? 0 : x);
+const parseDay = (s) => new Date(s + "T00:00:00Z");
+const isoDay = (d) => d.toISOString().slice(0, 10);
+const fmtDay = (s) => { const out = FMT.day.format(parseDay(s)); return LANG === "fr" ? out.replace(/^1 /, "1er ") : out; };
+const fmtShort = (s) => FMT.short.format(parseDay(s));
+function weekStart(day) { const d = parseDay(day); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return isoDay(d); }
 
 /* =================================================================== état */
+const X_DEFAULT = { cand: "", theme: "", pos: "", cad: "", concept: "", q: "", sort: "date", shown: 15 };
 const S = {
-  data: null, games: null, cands: [], cand: new Map(), vars: new Map(), fw: new Map(), tweets: [],
-  periods: [], period: "all", bloc: "", focus: "", tab: "apercu",
+  data: null, games: { items: [] }, cands: [], cand: new Map(), vars: new Map(), fw: new Map(), tweets: [],
+  periods: [], period: "all", bloc: "", focus: "", tab: "jouer",
   apercuHeat: "themes", discours: "carre", discoursVar: {}, discoursScope: "ecologie", selectedCell: null,
-  x: { cand: "", theme: "", pos: "", cad: "", concept: "", q: "", sort: "date", shown: 15 },
-  mots: { who: "", mode: "candidats" },
-  tables: new Map(), openTables: new Set(),
+  x: { ...X_DEFAULT }, mots: { who: "", mode: "candidats" },
+  tables: new Map(), openTables: new Set(), openChips: new Set(),
+  play: null, filtersOpen: false, langInUrl: false, scrollTo: null, focusTo: null,
 };
 
 /* =================================================================== décodage */
@@ -68,85 +139,103 @@ function decode(data) {
   const at = Object.fromEntries(cols.map((c, i) => [c, i]));
   const vars = data.codebook.variables.filter((v) => v.short !== "e");
   S.tweets = rows.map((r) => {
-    const t = { i: r[at.i], c: S.cands[r[at.c]].key, d: r[at.d], e: r[at.e], p: r[at.p], s: r[at.s], l: r[at.l], rt: r[at.rt] };
+    const tw = { i: r[at.i], c: S.cands[r[at.c]].key, d: r[at.d], e: r[at.e], p: r[at.p], s: r[at.s], l: r[at.l], rt: r[at.rt] };
     for (const v of vars) {
       const raw = r[at[v.short]];
-      if (raw === null || raw === undefined) { t[v.key] = v.kind === "multi" ? [] : null; continue; }
-      if (v.kind === "noul") t[v.key] = !!raw;
-      else if (v.kind === "multi") t[v.key] = v.options.filter((_, i) => raw & (1 << i)).map((o) => o.key);
-      else t[v.key] = (v.options[raw] || {}).key || null;
+      if (raw === null || raw === undefined) { tw[v.key] = v.kind === "multi" ? [] : null; continue; }
+      if (v.kind === "noul") tw[v.key] = !!raw;
+      else if (v.kind === "multi") tw[v.key] = v.options.filter((_, i) => raw & (1 << i)).map((o) => o.key);
+      else tw[v.key] = (v.options[raw] || {}).key || null;
     }
-    const tx = data.texts[t.i];
-    if (tx) Object.assign(t, { t: tx.t, rs: tx.rs, lx: tx.lx, im: tx.im });
-    return t;
+    const tx = data.texts[tw.i];
+    if (tx) Object.assign(tw, { t: tx.t, rs: tx.rs, lx: tx.lx, im: tx.im });
+    return tw;
   });
-  const anchor = data.generated_at.slice(0, 10);
-  const minus = (n) => { const d = parseDay(anchor); d.setUTCDate(d.getUTCDate() - n + 1); return isoDay(d); };
+}
+function buildPeriods() {
+  const d = S.data;
+  const anchor = d.generated_at.slice(0, 10);
+  const minus = (n) => { const x = parseDay(anchor); x.setUTCDate(x.getUTCDate() - n + 1); return isoDay(x); };
   S.periods = [
-    { key: "all", label: `Toute l'étude, depuis le ${fmtDay(data.study.start)}`, start: data.study.start, end: null },
-    { key: "d90", label: "90 derniers jours", start: minus(90), end: anchor },
-    { key: "d30", label: "30 derniers jours", start: minus(30), end: anchor },
-    { key: "d7", label: "7 derniers jours", start: minus(7), end: anchor },
-    ...(data.study.phases || []).map((p) => ({ key: p.key, label: `${p.label} : ${fmtShort(p.start)} au ${fmtShort(p.end)}`, start: p.start, end: p.end })),
+    { key: "all", label: t("period_all", { date: fmtDay(d.study.start) }), short: t("period_all_short"), start: d.study.start, end: null },
+    ...[90, 30, 7].map((n) => ({ key: `d${n}`, label: t("period_last", { n }), short: t("period_last", { n }), start: minus(n), end: anchor })),
+    ...(d.study.phases || []).map((p) => ({ key: p.key, label: t("period_phase", { label: L(p, "label"), start: fmtShort(p.start), end: fmtShort(p.end) }), short: L(p, "label"), start: p.start, end: p.end })),
   ];
 }
 const V = (key) => S.vars.get(key);
-const optLabel = (varKey, optKey) => ((V(varKey)?.options || []).find((o) => o.key === optKey) || { label: optKey || "–" }).label;
-const optFr = (varKey, optKey) => ((V(varKey)?.options || []).find((o) => o.key === optKey) || {}).fr || "";
+const opt = (varKey, optKey) => (V(varKey)?.options || []).find((o) => o.key === optKey);
+const optLabel = (varKey, optKey) => { const o = opt(varKey, optKey); return o ? L(o, "label") : optKey || "–"; };
+// Définition d'une catégorie : glose française, ou définition anglaise donnée aux modèles
+const optDef = (varKey, optKey) => { const o = opt(varKey, optKey); return !o || !o.fr ? "" : LANG === "en" ? o.en : o.fr; };
+const varLabel = (key) => L(V(key), "label") || key;
+const fwLabel = (key) => L(S.fw.get(key), "label") || key;
 const candName = (k) => (S.cand.get(k) || { name: k }).name;
+const candParty = (k) => L(S.cand.get(k), "party");
+const byName = (a, b) => FMT.coll.compare(a.name, b.name);
+const growthMap = () => S.data.codebook.growth || {};
 function shortName(name) {
   const w = name.split(" ");
   if (w.length < 2) return name;
   const i = w.length >= 3 && /^(le|la|de|du|des|d'|van)$/i.test(w[w.length - 2]) ? w.length - 2 : w.length - 1;
   return w.slice(i).join(" ");
 }
-const blocLabel = (k) => ((S.data.study.blocs || []).find((b) => b.key === k) || { label: k || "Autre" }).label;
+const blocLabel = (k) => L((S.data.study.blocs || []).find((b) => b.key === k), "label") || t("bloc_other");
 
+const currentPeriod = () => S.periods.find((x) => x.key === S.period) || S.periods[0];
+function inPeriod() {
+  const p = currentPeriod();
+  return S.tweets.filter((tw) => (!p.start || tw.d >= p.start) && (!p.end || tw.d <= p.end));
+}
 function filtered() {
-  const p = S.periods.find((x) => x.key === S.period) || S.periods[0];
-  return S.tweets.filter((t) => {
-    if (p.start && t.d < p.start) return false;
-    if (p.end && t.d > p.end) return false;
-    if (S.bloc && (S.cand.get(t.c) || {}).bloc !== S.bloc) return false;
-    return true;
-  });
+  const list = inPeriod();
+  return S.bloc ? list.filter((tw) => (S.cand.get(tw.c) || {}).bloc === S.bloc) : list;
 }
 function byCandidate(tweets) {
   const m = new Map();
-  for (const t of tweets) {
-    let s = m.get(t.c);
-    if (!s) { s = { key: t.c, n: 0, eco: 0, fav: 0, neu: 0, cri: 0, tweets: [] }; m.set(t.c, s); }
-    s.n++; s.tweets.push(t);
-    if (t.e) { s.eco++; if (t.position === "favorable_transition") s.fav++; else if (t.position === "critique_ecologie") s.cri++; else s.neu++; }
+  for (const tw of tweets) {
+    let s = m.get(tw.c);
+    if (!s) { s = { key: tw.c, n: 0, eco: 0, fav: 0, neu: 0, cri: 0, tweets: [] }; m.set(tw.c, s); }
+    s.n++; s.tweets.push(tw);
+    if (tw.e) { s.eco++; if (tw.position === "favorable_transition") s.fav++; else if (tw.position === "critique_ecologie") s.cri++; else s.neu++; }
   }
   return [...m.values()].sort((a, b) => b.eco / b.n - a.eco / a.n || b.n - a.n);
+}
+// Catégorie la plus fréquente d'une variable parmi des tweets, hors « aucun » et « non applicable »
+function topOf(tweets, varKey) {
+  const counts = new Map();
+  for (const tw of tweets) {
+    const v = tw[varKey];
+    for (const k of Array.isArray(v) ? v : [v]) if (k && !NULLISH.has(k)) counts.set(k, (counts.get(k) || 0) + 1);
+  }
+  const best = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+  return best && tweets.length ? { key: best[0], n: best[1], share: best[1] / tweets.length } : null;
 }
 
 /* =================================================================== infobulle */
 function showTip(anchor, title, rows, note) {
-  const t = $("#tooltip");
-  t.replaceChildren();
-  if (title) t.append(el("div", { class: "tt-title", text: title }));
+  const tip = $("#tooltip");
+  tip.replaceChildren();
+  if (title) tip.append(el("div", { class: "tt-title", text: title }));
   for (const r of rows || []) {
     const row = el("div", { class: "tt-row" });
     if (r.key) row.append(el("span", { class: r.keyShape === "swatch" ? "swatch" : "linekey", style: `background:${r.key}` }));
     row.append(el("strong", { text: r.value }), el("span", { text: r.label }));
-    t.append(row);
+    tip.append(row);
   }
-  if (note) t.append(el("div", { class: "tt-note", text: note }));
-  t.hidden = false;
+  if (note) tip.append(el("div", { class: "tt-note", text: note }));
+  tip.hidden = false;
   let x, y;
   if (anchor && anchor.clientX !== undefined && anchor.type !== "focus") { x = anchor.clientX; y = anchor.clientY; }
   else { const r = (anchor.currentTarget || anchor.target || anchor).getBoundingClientRect(); x = r.left + r.width / 2; y = r.bottom; }
-  const w = t.offsetWidth, h = t.offsetHeight;
+  const w = tip.offsetWidth, h = tip.offsetHeight;
   let left = x + 14, top = y + 14;
   if (left + w > innerWidth - 8) left = Math.max(8, x - w - 14);
   if (top + h > innerHeight - 8) top = Math.max(8, y - h - 14);
-  t.style.left = left + "px"; t.style.top = top + "px";
+  tip.style.left = left + "px"; tip.style.top = top + "px";
 }
 function hideTip() { $("#tooltip").hidden = true; }
 function hoverable(node, build) {
-  if (!node.hasAttribute("tabindex")) node.tabIndex = 0;
+  if (!node.hasAttribute("tabindex") && !/^(BUTTON|A)$/.test(node.tagName)) node.tabIndex = 0;
   const on = (e) => { const b = build(); showTip(e, b.title, b.rows, b.note); };
   node.addEventListener("pointermove", on);
   node.addEventListener("focus", on);
@@ -168,12 +257,12 @@ function openPopover(btn, build) {
   if (popoverAnchor === btn) { closePopover(); return; }
   closePopover();
   const pop = $("#popover");
-  pop.replaceChildren(el("button", { class: "close", type: "button", "aria-label": "Fermer", onclick: closePopover, text: "×" }), ...build());
+  pop.replaceChildren(el("button", { class: "close", type: "button", "aria-label": t("close"), onclick: closePopover, text: "×" }), ...build());
   pop.hidden = false;
   popoverAnchor = btn; btn.setAttribute("aria-expanded", "true");
   const r = btn.getBoundingClientRect();
   const w = pop.offsetWidth, h = pop.offsetHeight;
-  let left = Math.min(Math.max(16, r.left - 12), innerWidth - w - 16);
+  const left = Math.min(Math.max(16, r.left - 12), innerWidth - w - 16);
   let top = r.bottom + 8;
   if (top + h > innerHeight - 12) top = Math.max(12, r.top - h - 8);
   pop.style.left = left + "px"; pop.style.top = top + "px";
@@ -183,39 +272,39 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#pop
 document.addEventListener("pointerdown", (e) => { if (!$("#popover").hidden && !e.target.closest("#popover") && !e.target.closest(".info-btn")) closePopover(); });
 addEventListener("scroll", debounce(closePopover, 50), { passive: true });
 
+function fwBody(f) {
+  return [el("h3", { text: L(f, "label") }), el("p", { class: "who", text: L(f, "auteurs") }), el("p", { text: L(f, "resume") }),
+    el("p", {}, el("strong", { text: t("in_this_study") + " " }), L(f, "dans_l_etude")), refsList(f.refs)];
+}
 function infoBtn(fwKey) {
   const f = S.fw.get(fwKey);
   if (!f) return null;
-  const btn = el("button", { class: "info-btn", type: "button", "aria-label": `En savoir plus : ${f.label}`, "aria-expanded": "false", text: "i" });
-  btn.addEventListener("click", () => openPopover(btn, () => [
-    el("h3", { text: f.label }), el("p", { class: "who", text: f.auteurs }),
-    el("p", { text: f.resume }), el("p", {}, el("strong", { text: "Dans cette étude. " }), f.dans_l_etude),
-    refsList(f.refs),
-  ]));
+  const btn = el("button", { class: "info-btn", type: "button", "aria-label": t("info_about", { label: L(f, "label") }), "aria-expanded": "false", text: "i" });
+  btn.addEventListener("click", () => openPopover(btn, () => fwBody(f)));
   return btn;
 }
 function catInfoBtn(varKey, optKey) {
-  const fr = optFr(varKey, optKey);
+  const def = optDef(varKey, optKey);
   const v = V(varKey);
-  if (!fr || !v) return null;
-  const btn = el("button", { class: "info-btn", type: "button", "aria-label": `Définition : ${optLabel(varKey, optKey)}`, "aria-expanded": "false", text: "i" });
+  if (!def || !v) return null;
+  const btn = el("button", { class: "info-btn", type: "button", "aria-label": t("definition_of", { label: optLabel(varKey, optKey) }), "aria-expanded": "false", text: "i" });
   btn.addEventListener("click", () => openPopover(btn, () => {
     const f = S.fw.get(v.framework);
-    return [el("h3", { text: optLabel(varKey, optKey) }), el("p", { class: "who", text: `${v.label} · ${f ? f.auteurs : ""}` }), el("p", { text: fr }),
-      f ? el("p", {}, el("a", { href: `#discours/${f.key}`, text: `Le cadre : ${f.label}` })) : null, f ? refsList(f.refs) : null];
+    return [el("h3", { text: optLabel(varKey, optKey) }), el("p", { class: "who", text: f ? `${varLabel(varKey)} · ${L(f, "auteurs")}` : varLabel(varKey) }), el("p", { text: def }),
+      f && DISCOURS_ORDER.includes(f.key) ? el("p", {}, el("a", { href: `#discours/${f.key}`, text: t("the_framework", { label: L(f, "label") }) })) : null, f ? refsList(f.refs) : null];
   }));
   return btn;
 }
 function titleWithInfo(tag, text, fwKey) { return el("div", { class: "title-row" }, el(tag, { text }), fwKey ? infoBtn(fwKey) : null); }
 
-/* =================================================================== avatars */
+/* =================================================================== avatars et comptes */
 function initials(name) { return name.split(/[\s-]+/).filter(Boolean).map((w) => w[0]).slice(0, 2).join("").toUpperCase(); }
+const photoCredit = (p) => `${t("photo")} ${L(p, "auteur") || t("unknown_author")}${p.licence ? ", " + p.licence : ""}`;
 function avatar(key, size = 28) {
   const c = S.cand.get(key) || { name: key };
   const box = el("span", { class: "avatar", style: `width:${size}px;height:${size}px;font-size:${Math.round(size * 0.38)}px`, "aria-hidden": "true" });
   if (c.photo && c.photo.url) {
-    const img = el("img", { src: c.photo.url, alt: "", loading: "lazy", decoding: "async", referrerpolicy: "no-referrer",
-      title: `Photo : ${c.photo.auteur || "auteur inconnu"}${c.photo.licence ? ", " + c.photo.licence : ""}` });
+    const img = el("img", { src: c.photo.url, alt: "", loading: "lazy", decoding: "async", referrerpolicy: "no-referrer", title: photoCredit(c.photo) });
     img.addEventListener("error", () => { box.replaceChildren(initials(c.name)); });
     box.append(img);
   } else box.append(initials(c.name));
@@ -223,27 +312,28 @@ function avatar(key, size = 28) {
 }
 const ACCOUNT = {
   actif: null,
-  peu_actif: { cls: "warning", ico: "!", text: "Peu actif sur X" },
-  introuvable: { cls: "critical", ico: "✕", text: "Compte X introuvable" },
-  protege: { cls: "warning", ico: "!", text: "Compte X protégé" },
-  sans_compte: { cls: "critical", ico: "✕", text: "Pas de compte X" },
-  en_attente: { cls: "", ico: "…", text: "Collecte à venir" },
+  peu_actif: { cls: "warning", ico: "!" },
+  introuvable: { cls: "critical", ico: "✕" },
+  protege: { cls: "warning", ico: "!" },
+  sans_compte: { cls: "critical", ico: "✕" },
+  en_attente: { cls: "", ico: "…" },
 };
+const accountText = (k) => t("account_" + (k || "actif"));
 function accountBadge(c) {
   const a = ACCOUNT[c.compte];
   if (!a) return null;
-  return el("span", { class: `badge ${a.cls}`, title: c.note || a.text }, el("span", { class: "ico", text: a.ico }), a.text);
+  return el("span", { class: `badge ${a.cls}`, title: L(c, "note") || accountText(c.compte) }, el("span", { class: "ico", "aria-hidden": "true", text: a.ico }), accountText(c.compte));
 }
 
-/* =================================================================== tableaux */
+/* =================================================================== cartes et tableaux */
 function tableToggle(id) {
   const isOpen = S.openTables.has(id);
-  const btn = el("button", { class: "table-toggle", type: "button", "aria-expanded": String(isOpen), text: isOpen ? "Masquer le tableau" : "Tableau" });
+  const btn = el("button", { class: "table-toggle", type: "button", "aria-expanded": String(isOpen), "aria-controls": id + "-table", text: isOpen ? t("table_hide") : t("table_show") });
   btn.addEventListener("click", () => {
     const open = btn.getAttribute("aria-expanded") !== "true";
     if (open) S.openTables.add(id); else S.openTables.delete(id);
     btn.setAttribute("aria-expanded", String(open));
-    btn.textContent = open ? "Masquer le tableau" : "Tableau";
+    btn.textContent = open ? t("table_hide") : t("table_show");
     const view = document.getElementById(id + "-table");
     view.hidden = !open;
     if (open) renderTable(id);
@@ -259,16 +349,22 @@ function renderTable(id) {
   const view = document.getElementById(id + "-table");
   const spec = S.tables.get(id);
   view.replaceChildren();
-  if (!spec || !spec.rows.length) { view.append(el("p", { class: "empty", text: "Aucune donnée pour cette sélection." })); return; }
+  if (!spec || !spec.rows.length) { view.append(el("p", { class: "empty", text: t("no_data") })); return; }
   view.append(el("table", {},
     el("thead", {}, el("tr", {}, spec.headers.map((h) => el("th", { class: h.num ? "num" : null, text: h.label })))),
     el("tbody", {}, spec.rows.map((r) => el("tr", {}, r.map((v, i) => el("td", { class: spec.headers[i].num ? "num" : null, text: v })))))));
 }
 function card(id, title, fwKey, sub, ...body) {
   return el("section", { class: "card", id },
-    el("header", { class: "card-head" }, el("div", {}, titleWithInfo("h2", title, fwKey), sub ? el("p", { class: "sub", id: id + "-sub", text: sub }) : null), tableToggle(id)),
+    el("header", { class: "card-head" }, el("div", {}, titleWithInfo("h2", title, fwKey), sub ? el("p", { class: "sub", text: sub }) : null), tableToggle(id)),
     ...body, el("div", { class: "table-view", id: id + "-table", hidden: !S.openTables.has(id) }));
 }
+function option(value, label, selected) { return el("option", { value, selected: selected ? true : null, text: label }); }
+function segCtrl(items, current, onPick, label) {
+  return el("div", { class: "seg-ctrl", role: "group", "aria-label": label }, items.map(([k, text]) =>
+    el("button", { type: "button", "aria-pressed": String(k === current), text, onclick: () => onPick(k) })));
+}
+const sectionIntro = (title, text, ...extra) => el("div", { class: "section-intro" }, el("h2", { text: title }), el("p", { text }), ...extra);
 
 /* =================================================================== graphiques */
 function barName(key, n, threshold = MIN_N) {
@@ -278,30 +374,30 @@ function barName(key, n, threshold = MIN_N) {
 
 function renderSaillance(box, stats) {
   box.replaceChildren();
-  if (!stats.length) { box.append(el("p", { class: "empty", text: "Aucun tweet sur cette période." })); setTable("saillance", [], []); return; }
+  if (!stats.length) { box.append(el("p", { class: "empty", text: t("empty_period") })); setTable("saillance", [], []); return; }
   const max = Math.max(...stats.map((s) => s.eco / s.n), 0.0001);
   const grid = el("div", { class: "bars" });
   for (const s of stats) {
     const share = s.eco / s.n, focus = S.focus === s.key, dim = S.focus && !focus;
-    const track = el("div", { class: "bar-track", "aria-label": `${candName(s.key)} : ${pct(share)}, ${s.eco} sur ${s.n}` },
+    const track = el("div", { class: "bar-track", "aria-label": t("aria_share", { name: candName(s.key), v: pct(share), eco: num(s.eco), n: num(s.n) }) },
       el("div", { class: "bar" + (dim ? " dim" : ""), style: `width:${(share / max) * 80}%` }), el("span", { class: "bar-value", text: pct(share) }));
-    hoverable(track, () => ({ title: candName(s.key), rows: [{ value: pct(share), label: "des tweets parlent d'écologie" }, { value: num(s.eco), label: `tweets écologie sur ${num(s.n)}` }],
-      note: s.n < MIN_N ? "Moins de 20 tweets : pourcentage fragile." : null }));
+    hoverable(track, () => ({ title: candName(s.key), rows: [{ value: pct(share), label: t("tt_eco_share") }, { value: num(s.eco), label: t("tt_eco_of", { n: num(s.n) }) }],
+      note: s.n < MIN_N ? t("fragile_n", { n: MIN_N }) : null }));
     grid.append(el("div", { class: "bar-row" + (focus ? " is-focus" : "") }, barName(s.key, s.n), track));
   }
   box.append(grid);
-  setTable("saillance", [{ label: "Candidat" }, { label: "Tweets", num: true }, { label: "Tweets écologie", num: true }, { label: "Part", num: true }],
+  setTable("saillance", [{ label: t("th_candidate") }, { label: t("th_tweets"), num: true }, { label: t("th_eco_tweets"), num: true }, { label: t("th_share"), num: true }],
     stats.map((s) => [candName(s.key), num(s.n), num(s.eco), pct(s.eco / s.n)]));
 }
 
 function renderPosition(box, stats) {
   box.replaceChildren(el("div", { class: "legend" },
     el("span", { class: "key" }, el("span", { class: "swatch", style: "background:var(--accent-2)" }), optLabel("position", "critique_ecologie")),
-    el("span", { class: "key" }, el("span", { class: "swatch", style: "background:var(--neutral-mark)" }), "Neutre"),
+    el("span", { class: "key" }, el("span", { class: "swatch", style: "background:var(--neutral-mark)" }), optLabel("position", "neutre")),
     el("span", { class: "key" }, el("span", { class: "swatch", style: "background:var(--accent)" }), optLabel("position", "favorable_transition"))));
   const rows = stats.filter((s) => s.eco >= 3).map((s) => ({ ...s, f: s.fav / s.eco, u: s.neu / s.eco, c: s.cri / s.eco })).sort((a, b) => (b.f - b.c) - (a.f - a.c));
   const excluded = stats.filter((s) => s.eco > 0 && s.eco < 3).length;
-  if (!rows.length) { box.append(el("p", { class: "empty", text: "Pas assez de tweets écologie sur cette période, 3 au minimum par candidat." })); setTable("position", [], []); return; }
+  if (!rows.length) { box.append(el("p", { class: "empty", text: t("position_empty") })); setTable("position", [], []); return; }
   const M = Math.max(...rows.map((r) => Math.max(r.c + r.u / 2, r.f + r.u / 2)), 0.5);
   const narrow = innerWidth <= 760;
   const trackW = Math.max(140, narrow ? ((box.clientWidth || 340) - 12) * 0.66 : (box.clientWidth || 900) - 202);
@@ -310,7 +406,7 @@ function renderPosition(box, stats) {
   const grid = el("div", { class: "bars" });
   for (const r of rows) {
     const focus = S.focus === r.key, dim = S.focus && !focus;
-    const track = el("div", { class: "div-track" + (dim ? " dimmed" : ""), "aria-label": `${candName(r.key)} : ${pct(r.f)} favorable, ${pct(r.u)} neutre, ${pct(r.c)} critique` });
+    const track = el("div", { class: "div-track" + (dim ? " dimmed" : ""), "aria-label": t("aria_position", { name: candName(r.key), f: pct(r.f), u: pct(r.u), c: pct(r.c) }) });
     const nl = 50 - sc(r.u / 2), nr = 50 + sc(r.u / 2);
     const segs = [];
     if (r.c > 0) segs.push(el("div", { class: "seg cri", style: `left:${nl - sc(r.c)}%;width:${sc(r.c)}%` }));
@@ -320,33 +416,33 @@ function renderPosition(box, stats) {
     track.append(...segs);
     if (r.c > 0) track.append(el("span", { class: "seg-label", style: `right:${100 - (nl - sc(r.c)) + 1}%`, text: pct(r.c, 0) }));
     if (r.f > 0) track.append(el("span", { class: "seg-label", style: `left:${nr + sc(r.f) + 1}%`, text: pct(r.f, 0) }));
-    hoverable(track, () => ({ title: `${candName(r.key)} · ${num(r.eco)} tweets écologie`, rows: [
-      { value: pct(r.f), label: "favorable", key: "var(--accent)", keyShape: "swatch" },
-      { value: pct(r.u), label: "neutre", key: "var(--neutral-mark)", keyShape: "swatch" },
-      { value: pct(r.c), label: "critique", key: "var(--accent-2)", keyShape: "swatch" }],
-      note: r.eco < MIN_N ? "Moins de 20 tweets écologie : répartition fragile." : null }));
+    hoverable(track, () => ({ title: `${candName(r.key)} · ${tn("n_eco_tweets", r.eco)}`, rows: [
+      { value: pct(r.f), label: t("pos_fav"), key: "var(--accent)", keyShape: "swatch" },
+      { value: pct(r.u), label: t("pos_neu"), key: "var(--neutral-mark)", keyShape: "swatch" },
+      { value: pct(r.c), label: t("pos_cri"), key: "var(--accent-2)", keyShape: "swatch" }],
+      note: r.eco < MIN_N ? t("fragile_eco", { n: MIN_N }) : null }));
     grid.append(el("div", { class: "bar-row" + (focus ? " is-focus" : "") }, barName(r.key, r.eco), track));
   }
-  box.append(grid, el("div", { class: "div-axis" }, el("span"), el("div", { class: "div-axis-inner" }, el("span", { text: "← plus critique" }), el("span", { text: "plus favorable →" }))));
-  if (excluded) box.append(el("p", { class: "note-small", text: `${excluded} candidat${excluded > 1 ? "s" : ""} avec moins de 3 tweets écologie sur la période ${excluded > 1 ? "ne sont" : "n'est"} pas affiché${excluded > 1 ? "s" : ""}.` }));
-  setTable("position", [{ label: "Candidat" }, { label: "Tweets écologie", num: true }, { label: "Favorable", num: true }, { label: "Neutre", num: true }, { label: "Critique", num: true }],
+  box.append(grid, el("div", { class: "div-axis" }, el("span"), el("div", { class: "div-axis-inner" }, el("span", { text: t("axis_more_critical") }), el("span", { text: t("axis_more_favorable") }))));
+  if (excluded) box.append(el("p", { class: "note-small", text: tn("position_excluded", excluded) }));
+  setTable("position", [{ label: t("th_candidate") }, { label: t("th_eco_tweets"), num: true }, { label: t("th_favorable"), num: true }, { label: t("th_neutral"), num: true }, { label: t("th_critical"), num: true }],
     rows.map((r) => [candName(r.key), num(r.eco), pct(r.f), pct(r.u), pct(r.c)]));
 }
 
 function weekly(tweets) {
   const m = new Map();
-  for (const t of tweets) { const w = weekStart(t.d); const s = m.get(w) || { n: 0, eco: 0 }; s.n++; s.eco += t.e; m.set(w, s); }
+  for (const tw of tweets) { const w = weekStart(tw.d); const s = m.get(w) || { n: 0, eco: 0 }; s.n++; s.eco += tw.e; m.set(w, s); }
   return m;
 }
 function renderEvolution(box, legend, tweets) {
   box.replaceChildren();
-  if (!tweets.length) { legend.replaceChildren(); box.append(el("p", { class: "empty", text: "Aucun tweet sur cette période." })); setTable("evolution", [], []); return; }
+  if (!tweets.length) { legend.replaceChildren(); box.append(el("p", { class: "empty", text: t("empty_period") })); setTable("evolution", [], []); return; }
   const all = weekly(tweets);
   const weeks = [...all.keys()].sort();
   const full = [];
   for (let d = parseDay(weeks[0]); isoDay(d) <= weeks[weeks.length - 1]; d.setUTCDate(d.getUTCDate() + 7)) full.push(isoDay(d));
-  const series = [{ name: S.bloc ? "Famille sélectionnée" : "Ensemble des candidats", data: all, color: S.focus ? "var(--muted)" : "var(--accent)" }];
-  if (S.focus) series.push({ name: candName(S.focus), data: weekly(tweets.filter((t) => t.c === S.focus)), color: "var(--accent)" });
+  const series = [{ name: S.bloc ? t("series_bloc") : t("series_all"), data: all, color: S.focus ? "var(--muted)" : "var(--accent)" }];
+  if (S.focus) series.push({ name: candName(S.focus), data: weekly(tweets.filter((tw) => tw.c === S.focus)), color: "var(--accent)" });
   legend.replaceChildren(...(series.length > 1 ? series.map((s) => el("span", { class: "key" }, el("span", { class: "linekey", style: `background:${s.color}` }), s.name)) : []));
   const W = Math.max(320, box.clientWidth || 640), H = 280, m = { t: 22, r: 16, b: 28, l: 44 };
   const iw = W - m.l - m.r, ih = H - m.t - m.b;
@@ -354,7 +450,7 @@ function renderEvolution(box, legend, tweets) {
   const ymax = [0.04, 0.08, 0.12, 0.2, 0.4, 0.6, 0.8, 1].find((s) => s >= Math.max(...values, 0.01) * 1.08) || 1;
   const x = (i) => m.l + (full.length === 1 ? iw / 2 : (i / (full.length - 1)) * iw);
   const y = (v) => m.t + ih - (v / ymax) * ih;
-  const root = svg("svg", { class: "line-chart", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Part des tweets écologie par semaine" });
+  const root = svg("svg", { class: "line-chart", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": t("evo_aria") });
   for (let i = 0; i <= 4; i++) {
     const v = (ymax * i) / 4;
     root.append(svg("line", { class: i === 0 ? "base-line" : "grid-line", x1: m.l, x2: W - m.r, y1: y(v), y2: y(v) }));
@@ -368,7 +464,7 @@ function renderEvolution(box, legend, tweets) {
     if (i < 0) continue;
     const ex = x(i);
     root.append(svg("line", { class: "event-line", x1: ex, x2: ex, y1: m.t - 6, y2: m.t + ih }));
-    if (ex - lastX > 110) { const end = ex > W - 120; const tx = svg("text", { class: "event-text", x: end ? ex - 4 : ex + 4, y: m.t - 8, "text-anchor": end ? "end" : "start" }); tx.textContent = ev.label; root.append(tx); lastX = ex; }
+    if (ex - lastX > 110) { const end = ex > W - 120; const tx = svg("text", { class: "event-text", x: end ? ex - 4 : ex + 4, y: m.t - 8, "text-anchor": end ? "end" : "start" }); tx.textContent = L(ev, "label"); root.append(tx); lastX = ex; }
   }
   const ends = [];
   for (const s of series) {
@@ -385,7 +481,7 @@ function renderEvolution(box, legend, tweets) {
   const hit = svg("rect", { x: m.l, y: m.t, width: iw, height: ih, fill: "transparent", tabindex: 0 });
   root.append(cross, hit);
   const at = (i) => { cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible"); const w = full[i];
-    return { title: `Semaine du ${fmtDay(w)}`, rows: series.map((s) => { const v = s.data.get(w); return { value: v ? pct(v.eco / v.n) : "–", label: v ? `${s.name} (${v.eco}/${v.n})` : `${s.name} (aucun tweet)`, key: s.color }; }) }; };
+    return { title: t("week_of", { date: fmtDay(w) }), rows: series.map((s) => { const v = s.data.get(w); return { value: v ? pct(v.eco / v.n) : "–", label: v ? `${s.name} (${v.eco}/${v.n})` : t("no_tweet_series", { name: s.name }), key: s.color }; }) }; };
   let cur = full.length - 1;
   hit.addEventListener("pointermove", (e) => { const r = root.getBoundingClientRect(); cur = Math.max(0, Math.min(full.length - 1, Math.round(((((e.clientX - r.left) / r.width) * W - m.l) / iw) * (full.length - 1)))); const b = at(cur); showTip(e, b.title, b.rows); });
   hit.addEventListener("pointerleave", () => { hideTip(); cross.setAttribute("visibility", "hidden"); });
@@ -393,14 +489,14 @@ function renderEvolution(box, legend, tweets) {
   hit.addEventListener("blur", () => { hideTip(); cross.setAttribute("visibility", "hidden"); });
   hit.addEventListener("keydown", (e) => { if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return; e.preventDefault(); cur = Math.max(0, Math.min(full.length - 1, cur + (e.key === "ArrowRight" ? 1 : -1))); const b = at(cur); showTip(hit, b.title, b.rows); });
   box.append(root);
-  setTable("evolution", [{ label: "Semaine" }, ...series.flatMap((s) => [{ label: `${s.name} : tweets`, num: true }, { label: "part écologie", num: true }])],
+  setTable("evolution", [{ label: t("th_week") }, ...series.flatMap((s) => [{ label: t("th_series_tweets", { name: s.name }), num: true }, { label: t("th_series_share"), num: true }])],
     full.map((w) => [fmtDay(w), ...series.flatMap((s) => { const v = s.data.get(w); return v ? [num(v.n), pct(v.eco / v.n)] : ["0", "–"]; })]));
 }
 
 /* Heatmap générique. rows : [{key, label, n, values:{col:share}, counts:{col:count}, avatar?}] */
 function renderHeat(box, id, rows, cols, opts = {}) {
   box.replaceChildren();
-  if (!rows.length) { box.append(el("p", { class: "empty", text: opts.empty || "Aucun tweet sur cette période." })); setTable(id, [], []); return; }
+  if (!rows.length) { box.append(el("p", { class: "empty", text: opts.empty || t("empty_period") })); setTable(id, [], []); return; }
   const scaleRows = rows.some((r) => r.n >= MIN_N_SCALE) ? rows.filter((r) => r.n >= MIN_N_SCALE) : rows;
   const vals = scaleRows.flatMap((r) => cols.map((c) => r.values[c.key])).filter((v) => v !== null && v !== undefined);
   const lo = opts.domain === "minmax" ? Math.min(...vals) : 0;
@@ -417,44 +513,43 @@ function renderHeat(box, id, rows, cols, opts = {}) {
       r.avatar === false ? null : avatar(r.key, 18), " ", el("span", { class: "full", text: r.label }), el("span", { class: "short", text: S.cand.has(r.key) ? shortName(r.label) : r.label }),
       r.n !== undefined ? el("small", { text: `n=${r.n}` }) : null));
     for (const c of cols) {
-      const raw = r.values[c.key];
-      if (raw === null || raw === undefined) {
-        const empty = el("div", { class: "cell", "aria-label": `${r.label}, ${c.label} : pas assez de données` });
-        hoverable(empty, () => ({ title: `${r.label} · ${c.label}`, rows: [], note: "Pas assez de données." }));
+      const v = r.values[c.key];
+      if (v === null || v === undefined) {
+        const empty = el("div", { class: "cell", "aria-label": t("aria_cell_empty", { row: r.label, col: c.label }) });
+        hoverable(empty, () => ({ title: `${r.label} · ${c.label}`, rows: [], note: t("not_enough_data") }));
         grid.append(empty); continue;
       }
-      const v = raw;
       const selected = S.selectedCell && S.selectedCell.row === r.key && S.selectedCell.col === c.key && S.selectedCell.id === id;
       const cell = el("div", { class: `cell q${q(v)}` + (S.focus && S.cand.has(r.key) && !focus ? " dim" : "") + (selected ? " selected" : ""),
-        role: opts.onCell ? "button" : null, "aria-label": `${r.label}, ${c.label} : ${fmt(v)}` });
-      hoverable(cell, () => ({ title: `${r.label} · ${c.label}`, rows: [{ value: fmt(v), label: opts.unit || "" }, ...(r.counts ? [{ value: num(r.counts[c.key] || 0), label: `tweets sur ${num(r.n)}` }] : [])],
-        note: r.n < MIN_N ? "Moins de 20 tweets : pourcentage fragile." : (opts.onCell ? "Cliquez pour voir des exemples." : null) }));
+        role: opts.onCell ? "button" : null, "aria-label": t("aria_cell", { row: r.label, col: c.label, value: fmt(v) }) });
+      hoverable(cell, () => ({ title: `${r.label} · ${c.label}`, rows: [{ value: fmt(v), label: opts.unit || "" }, ...(r.counts ? [{ value: num(r.counts[c.key] || 0), label: t("tt_tweets_of", { n: num(r.n) }) }] : [])],
+        note: r.n < MIN_N ? t("fragile_n", { n: MIN_N }) : (opts.onCell ? t("click_examples") : null) }));
       if (opts.onCell) {
-        const go = () => opts.onCell(r, c);
-        cell.addEventListener("click", go);
-        cell.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+        const goCell = () => opts.onCell(r, c);
+        cell.addEventListener("click", goCell);
+        cell.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); goCell(); } });
       }
       grid.append(cell);
     }
   }
-  const notes = [opts.note, clamped ? `Lignes en gris : moins de ${MIN_N_SCALE} tweets, exclues du calcul du maximum de l'échelle.` : null].filter(Boolean);
+  const notes = [opts.note, clamped ? t("heat_clamped", { n: MIN_N_SCALE }) : null].filter(Boolean);
   box.append(el("div", { class: "heat-scroll" }, grid),
-    el("div", { class: "scale" }, el("span", { text: opts.min0 || "0 %" }), el("span", { class: "steps" }, [0, 1, 2, 3, 4, 5, 6].map((i) => el("span", { class: `q${i}` }))), el("span", { text: (clamped ? "≥ " : "") + fmt(max) })),
+    el("div", { class: "scale" }, el("span", { text: opts.min0 || pct(0, 0) }), el("span", { class: "steps" }, [0, 1, 2, 3, 4, 5, 6].map((i) => el("span", { class: `q${i}` }))), el("span", { text: (clamped ? "≥ " : "") + fmt(max) })),
     notes.length ? el("p", { class: "note-small", text: notes.join(" ") }) : null);
-  setTable(id, [{ label: opts.rowHeader || "Candidat" }, ...(rows[0].n !== undefined ? [{ label: "Tweets", num: true }] : []), ...cols.map((c) => ({ label: c.label, num: true }))],
+  setTable(id, [{ label: opts.rowHeader || t("th_candidate") }, ...(rows[0].n !== undefined ? [{ label: t("th_tweets"), num: true }] : []), ...cols.map((c) => ({ label: c.label, num: true }))],
     rows.map((r) => [r.label, ...(r.n !== undefined ? [num(r.n)] : []), ...cols.map((c) => (r.values[c.key] === null || r.values[c.key] === undefined ? "–" : fmt(r.values[c.key])))]));
 }
 
 /* Répartition d'une variable par candidat */
 function distribution(stats, variable, ecologyOnly) {
   const v = V(variable);
-  const cols = v.kind === "noul" ? [{ key: "oui", label: v.label }]
-    : v.options.filter((o) => !NULLISH.has(o.key)).map((o) => ({ key: o.key, label: o.label, title: o.fr || o.label }));
+  const cols = v.kind === "noul" ? [{ key: "oui", label: L(v, "label") }]
+    : v.options.filter((o) => !NULLISH.has(o.key)).map((o) => ({ key: o.key, label: L(o, "label"), title: optDef(variable, o.key) || L(o, "label") }));
   const rows = stats.map((s) => {
-    const pool = ecologyOnly ? s.tweets.filter((t) => t.e) : s.tweets;
+    const pool = ecologyOnly ? s.tweets.filter((tw) => tw.e) : s.tweets;
     const counts = Object.fromEntries(cols.map((c) => [c.key, 0]));
-    for (const t of pool) {
-      const val = t[variable];
+    for (const tw of pool) {
+      const val = tw[variable];
       if (Array.isArray(val)) val.forEach((k) => { if (k in counts) counts[k]++; });
       else if (val === true) counts[cols[0].key]++;
       else if (val in counts) counts[val]++;
@@ -464,188 +559,344 @@ function distribution(stats, variable, ecologyOnly) {
   return { rows, cols };
 }
 
-/* =================================================================== onglet Aperçu */
-function kpis(tweets) {
-  const eco = tweets.filter((t) => t.e);
-  const cri = eco.filter((t) => t.position === "critique_ecologie").length;
-  const active = new Set(tweets.map((t) => t.c)).size;
-  const tile = (label, value, note, hero) => el("div", { class: "kpi" + (hero ? " hero" : "") }, el("p", { class: "label", text: label }), el("p", { class: "value", text: value }), note ? el("p", { class: "note", text: note }) : null);
-  return el("section", { class: "kpi-row", "aria-label": "Chiffres clés" },
-    tile("Part des tweets qui parlent d'écologie", tweets.length ? pct(eco.length / tweets.length) : "–", `${num(eco.length)} sur ${num(tweets.length)} tweets`, true),
-    tile("Tweets analysés", num(tweets.length), `${active} candidat${active > 1 ? "s" : ""} actif${active > 1 ? "s" : ""}`),
-    tile("Tweets écologie", num(eco.length)),
-    tile("Critiques de l'écologie", eco.length ? pct(cri / eco.length) : "–", "parmi les tweets écologie"));
+/* =================================================================== boussole */
+// Position moyenne (+1 favorable, -1 critique, 0 sinon) et rapport moyen à la croissance (Dryzek)
+function compassRows(tweets) {
+  const growth = growthMap();
+  const rows = [], skipped = [];
+  for (const s of byCandidate(tweets)) {
+    const eco = s.tweets.filter((tw) => tw.e);
+    if (!eco.length) continue;
+    const withVision = eco.filter((tw) => tw.vision in growth);
+    if (eco.length < COMPASS_MIN || withVision.length < COMPASS_MIN_VISION) { skipped.push(s.key); continue; }
+    const top = topOf(withVision, "vision");
+    rows.push({ key: s.key, n: eco.length, x: mean(eco, (tw) => STANCE[tw.position] || 0), y: mean(withVision, (tw) => growth[tw.vision]), vision: top ? top.key : null });
+  }
+  return { rows, skipped };
+}
+function compassFrame() {
+  return el("div", { class: "compass-wrap" },
+    el("div", { class: "y-top", text: t("compass_y_top") }),
+    el("div", { class: "y-label", text: t("compass_y") }),
+    el("div", { class: "compass", role: "group", "aria-label": t("compass_aria") }),
+    el("div", { class: "y-bottom", text: t("compass_y_bottom") }),
+    el("div", { class: "x-axis" }, el("span", { text: t("compass_x_left") }), el("span", { text: t("compass_x") }), el("span", { text: t("compass_x_right") })));
+}
+// À appeler une fois le cadre dans la page : la taille des avatars dépend de la largeur réelle
+function drawCompass(wrap, rows, opts = {}) {
+  const box = $(".compass", wrap);
+  const W = box.clientWidth || 360;
+  const size = W < 340 ? 26 : W < 460 ? 30 : 36;
+  const pts = rows.map((r) => ({ r, s: size }));
+  if (opts.you) pts.push({ r: { key: "", ...opts.you }, s: 46, fixed: true });
+  // Domaine symétrique autour de zéro, ajusté aux points, par pas de 0,25
+  const span = (vals) => Math.min(1, Math.max(0.25, Math.ceil(Math.max(...vals.map(Math.abs)) * 1.15 * 4) / 4));
+  const dx = span(pts.map((p) => p.r.x)), dy = span(pts.map((p) => p.r.y));
+  for (const p of pts) {
+    p.pad = (p.s / 2 + 3) / W;
+    p.px = p.pad + ((p.r.x + dx) / (2 * dx)) * (1 - 2 * p.pad);
+    p.py = p.pad + ((dy - p.r.y) / (2 * dy)) * (1 - 2 * p.pad);
+  }
+  // Écarte les avatars qui se chevauchent, sans déplacer le point « Vous »
+  for (let it = 0; it < 120; it++) {
+    let moved = false;
+    for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
+      const a = pts[i], b = pts[j];
+      const min = ((a.s + b.s) / 2 + 3) / W;
+      const d = Math.hypot(b.px - a.px, b.py - a.py);
+      if (d >= min) continue;
+      // Points confondus : direction arbitraire mais stable
+      const ux = d < 1e-6 ? Math.cos(i * 2.4 + j) : (b.px - a.px) / d, uy = d < 1e-6 ? Math.sin(i * 2.4 + j) : (b.py - a.py) / d;
+      const push = min - d;
+      const wa = a.fixed ? 0 : b.fixed ? 1 : 0.5, wb = 1 - wa;
+      a.px -= ux * push * wa; a.py -= uy * push * wa; b.px += ux * push * wb; b.py += uy * push * wb;
+      moved = true;
+    }
+    for (const p of pts) { p.px = clamp(p.px, p.pad, 1 - p.pad); p.py = clamp(p.py, p.pad, 1 - p.pad); }
+    if (!moved) break;
+  }
+  const focus = opts.interactive ? S.focus : "";
+  box.replaceChildren(...pts.map((p) => {
+    const style = `left:${(p.px * 100).toFixed(2)}%;top:${(p.py * 100).toFixed(2)}%`;
+    if (p.fixed) return el("div", { class: "pt you", style, role: "img", "aria-label": t("you_aria", { x: signed(p.r.x), y: signed(p.r.y) }) }, el("span", { class: "you-pin", text: t("you") }));
+    const r = p.r;
+    const cls = "pt" + (focus === r.key ? " focus" : focus ? " dim" : "") + (opts.near && opts.near.has(r.key) ? " near" : "");
+    const node = el(opts.interactive ? "button" : "span", { class: cls, type: opts.interactive ? "button" : null, style,
+      "aria-label": t("compass_aria_pt", { name: candName(r.key), x: signed(r.x), y: signed(r.y) }), "aria-pressed": opts.interactive ? String(focus === r.key) : null }, avatar(r.key, p.s));
+    hoverable(node, () => ({ title: candName(r.key), rows: [{ value: signed(r.x), label: t("compass_tt_x") }, { value: signed(r.y), label: t("compass_tt_y") }],
+      note: [tn("n_eco_tweets", r.n), r.vision ? t("kv", { k: t("th_vision"), v: optLabel("vision", r.vision) }) : null].filter(Boolean).join(" · ") }));
+    if (opts.interactive) node.addEventListener("click", () => setFilter({ focus: S.focus === r.key ? "" : r.key }, "#boussole"));
+    return node;
+  }));
+}
+function compassTable(id, rows) {
+  setTable(id, [{ label: t("th_candidate") }, { label: t("th_eco_tweets"), num: true }, { label: t("th_stance"), num: true }, { label: t("th_growth"), num: true }, { label: t("th_vision") }],
+    [...rows].sort((a, b) => b.x - a.x).map((r) => [candName(r.key), num(r.n), signed(r.x), signed(r.y), r.vision ? optLabel("vision", r.vision) : "–"]));
 }
 
-function peopleCard() {
-  const list = [...S.cands].filter((c) => !S.bloc || c.bloc === S.bloc).sort((a, b) => a.name.localeCompare(b.name, "fr"));
-  const grid = el("div", { class: "people" }, list.map((c) => {
-    const btn = el("button", { class: "person", type: "button", "aria-pressed": String(S.focus === c.key), title: c.note || `Mettre en avant ${c.name}` },
-      avatar(c.key, 64), el("span", { class: "nm", text: c.name }), el("span", { class: "pt", text: `${c.party} · ${blocLabel(c.bloc)}` }), accountBadge(c));
-    btn.addEventListener("click", () => setFilter({ focus: S.focus === c.key ? "" : c.key }));
-    return btn;
-  }));
+/* =================================================================== onglet Aperçu */
+function kpis(tweets) {
+  const eco = tweets.filter((tw) => tw.e);
+  const cri = eco.filter((tw) => tw.position === "critique_ecologie").length;
+  const active = new Set(tweets.map((tw) => tw.c)).size;
+  const tile = (label, value, note, hero) => el("div", { class: "kpi" + (hero ? " hero-kpi" : "") }, el("p", { class: "label", text: label }), el("p", { class: "value", text: value }), note ? el("p", { class: "note", text: note }) : null);
+  return el("section", { class: "kpi-row", "aria-label": t("kpi_aria") },
+    tile(t("kpi_eco_share"), tweets.length ? pct(eco.length / tweets.length) : "–", t("kpi_eco_of", { eco: num(eco.length), n: num(tweets.length) }), true),
+    tile(t("kpi_tweets"), num(tweets.length), tn("kpi_active", active)),
+    tile(t("kpi_eco_tweets"), num(eco.length)),
+    tile(t("kpi_critical"), eco.length ? pct(cri / eco.length) : "–", t("kpi_critical_note")));
+}
+
+function stripCard() {
+  const list = [...S.cands].sort(byName);
   const flagged = list.filter((c) => ACCOUNT[c.compte]);
   return el("section", { class: "card", id: "candidats" },
-    el("header", { class: "card-head" }, el("div", {}, el("h2", { text: "Les candidats suivis" }),
-      el("p", { class: "sub", text: "Cliquez sur un candidat pour le mettre en avant dans tous les graphiques. Les comptes absents, introuvables ou peu actifs sur X sont signalés : leur discours est sous-représenté dans cette étude." }))),
-    grid, flagged.length ? el("p", { class: "note-small", text: flagged.map((c) => `${c.name} : ${(ACCOUNT[c.compte] || {}).text}${c.note ? ` (${c.note})` : ""}`).join(" · ") } ) : null);
+    el("header", { class: "card-head" }, el("div", {}, el("h2", { text: t("strip_title") }), el("p", { class: "sub", text: t("strip_sub") }))),
+    el("div", { class: "strip", role: "group", "aria-label": t("strip_title") }, list.map((c) => {
+      const a = ACCOUNT[c.compte];
+      const b = el("button", { class: "person" + (S.bloc && c.bloc !== S.bloc ? " dim" : ""), type: "button", "aria-pressed": String(S.focus === c.key), title: L(c, "note") || t("highlight", { name: c.name }) },
+        avatar(c.key, 56), el("span", { class: "nm", text: c.name }),
+        a ? el("span", { class: `flag ${a.cls}`, title: accountText(c.compte), "aria-label": accountText(c.compte), text: a.ico }) : null);
+      b.addEventListener("click", () => {
+        const next = S.focus === c.key ? "" : c.key;
+        if (next) S.scrollTo = { sel: "#profile", block: "nearest" };
+        setFilter({ focus: next }, next ? null : "#candidats");
+      });
+      return b;
+    })),
+    flagged.length ? el("p", { class: "note-small" }, el("strong", { text: t("strip_flagged") }), " ",
+      flagged.map((c) => t("kv", { k: c.name, v: L(c, "note") || accountText(c.compte) })).join(" · ")) : null);
+}
+
+function profileCard() {
+  const c = S.cand.get(S.focus);
+  if (!c) return null;
+  const period = inPeriod();
+  const mine = period.filter((tw) => tw.c === c.key);
+  const eco = mine.filter((tw) => tw.e);
+  const avg = period.length ? period.filter((tw) => tw.e).length / period.length : 0;
+  const head = el("div", { class: "profile-id" }, avatar(c.key, 96), el("h2", { text: c.name }), el("p", { class: "party", text: `${L(c, "party")} · ${blocLabel(c.bloc)}` }),
+    accountBadge(c),
+    c.handle ? el("a", { href: `https://x.com/${c.handle}`, target: "_blank", rel: "noopener", text: "@" + c.handle }) : null,
+    el("div", { class: "btn-row center" },
+      eco.some((tw) => tw.t) ? el("button", { class: "secondary-btn", type: "button", onclick: () => { S.x = { ...X_DEFAULT, cand: c.key }; go("tweets"); } }, t("profile_see_tweets")) : null,
+      el("button", { class: "ghost-btn", type: "button", onclick: () => setFilter({ focus: "" }) }, t("profile_close"))));
+  if (!mine.length) return el("section", { class: "card profile", id: "profile" }, head, el("p", { class: "empty", text: t("profile_no_tweets") }));
+  const stat = (label, fw, value, small, extra) => el("div", { class: "stat" }, el("div", { class: "k" }, label, fw ? infoBtn(fw) : null),
+    el("div", { class: "v" }, value, small ? [" ", el("small", { text: small })] : null), extra);
+  const topStat = (label, fw, varKey) => {
+    const x = topOf(eco, varKey);
+    return stat(label, fw, x ? optLabel(varKey, x.key) : t("profile_none"), x ? t("share_of_eco", { v: pct(x.share, 0) }) : null);
+  };
+  const fav = eco.filter((tw) => tw.position === "favorable_transition").length, cri = eco.filter((tw) => tw.position === "critique_ecologie").length, neu = eco.length - fav - cri;
+  const stack = eco.length ? el("div", { class: "mini-stack", role: "img", "aria-label": t("aria_position", { name: c.name, f: pct(fav / eco.length), u: pct(neu / eco.length), c: pct(cri / eco.length) }) },
+    fav ? el("span", { style: `flex:${fav};background:var(--accent)` }) : null, neu ? el("span", { style: `flex:${neu};background:var(--neutral-mark)` }) : null,
+    cri ? el("span", { style: `flex:${cri};background:var(--accent-2)` }) : null) : null;
+  const point = compassRows(period).rows.find((r) => r.key === c.key);
+  const lx = S.data.lexique;
+  const words = ((lx && lx.candidats && lx.candidats[c.key]) || []).slice(0, 10);
+  const forms = ((lx && lx.formules) || []).filter((f) => f.par_candidat && f.par_candidat[c.key]).sort((a, b) => b.par_candidat[c.key] - a.par_candidat[c.key]);
+  const body = el("div", {},
+    el("p", { class: "sub", text: [tn("n_tweets", mine.length), tn("n_eco_tweets", eco.length), currentPeriod().short].join(" · ") }),
+    eco.length && eco.length < MIN_N ? el("p", { class: "note-small", text: t("profile_few", { n: MIN_N }) }) : null,
+    el("div", { class: "stat-grid" },
+      stat(t("profile_eco_share"), "macro", pct(eco.length / mine.length), t("profile_avg", { v: pct(avg) })),
+      stat(t("profile_position"), "cadrage", eco.length ? t("profile_pos_value", { f: pct(fav / eco.length, 0), c: pct(cri / eco.length, 0) }) : "–", null, stack),
+      topStat(t("profile_frame"), "cadrage", "cadrage"),
+      topStat(t("profile_vision"), "visions", "vision"),
+      topStat(t("profile_device"), "procedes", "procedes"),
+      topStat(t("profile_topos"), "topoi", "topoi"),
+      topStat(t("profile_delay"), "retardement", "retardement"),
+      stat(t("profile_compass"), "boussole", point ? t("compass_coords", { x: signed(point.x), y: signed(point.y) }) : t("profile_not_placed"))),
+    words.length ? el("div", { class: "profile-block" }, el("h3", { text: t("profile_words") }), el("div", { class: "chips" }, words.map(([w]) => el("span", { class: "chip lex", text: w })))) : null,
+    forms.length ? el("div", { class: "profile-block" }, el("h3", { text: t("profile_formulas") }),
+      el("div", { class: "chips" }, forms.map((f) => el("span", { class: "chip", text: `${f.label}${LANG === "en" && f.en ? ` (${f.en})` : ""} · ${num(f.par_candidat[c.key])}` })))) : null);
+  return el("section", { class: "card profile", id: "profile", "aria-label": c.name }, head, body);
 }
 
 function renderApercu(panel) {
   const tweets = filtered();
   const stats = byCandidate(tweets);
-  panel.replaceChildren(kpis(tweets), peopleCard());
-  const sail = card("saillance", "Qui parle d'écologie ?", "macro", "Part des tweets originaux de chaque candidat qui abordent l'écologie, l'environnement ou l'énergie.", el("div", { class: "chart" }));
-  const pos = card("position", "Pour ou contre l'action écologique ?", "cadrage", "Position exprimée dans les tweets écologie : critique de l'écologie à gauche de l'axe, favorable à la transition à droite, neutre au centre.", el("div", { class: "chart" }));
+  panel.replaceChildren(sectionIntro(t("apercu_title"), t("apercu_intro")), stripCard(), S.focus ? profileCard() : null, kpis(tweets));
+  const { rows, skipped } = compassRows(tweets);
+  const wrap = rows.length ? compassFrame() : null;
+  const side = el("div", { class: "compass-side" },
+    el("h3", { text: t("compass_read") }), el("p", { text: t("compass_read_1") }), el("p", { text: t("compass_read_2") }), el("p", { class: "note-small", text: t("compass_read_3") }),
+    skipped.length ? el("p", { class: "note-small", text: t("compass_unplaced", { names: skipped.map(candName).join(", ") }) }) : null,
+    S.focus ? el("p", {}, el("a", { href: "#profile", onclick: (e) => { e.preventDefault(); const n = $("#profile"); if (n) n.scrollIntoView({ block: "start", behavior: smooth() }); } },
+      t("compass_see_profile", { name: candName(S.focus) }))) : null,
+    el("div", { class: "btn-row" }, el("a", { class: "secondary-btn", href: "#jouer/situer" }, icon("play", 16), t("compass_play"))));
+  const compass = card("boussole", t("compass_title"), "boussole", t("compass_sub"),
+    rows.length ? el("div", { class: "compass-layout" }, wrap, side) : el("p", { class: "empty", text: t("compass_empty", { n: COMPASS_MIN }) }));
+  const sail = card("saillance", t("sal_title"), "macro", t("sal_sub"), el("div", { class: "chart" }));
+  const pos = card("position", t("pos_title"), "cadrage", t("pos_sub"), el("div", { class: "chart" }));
   const evoLegend = el("div", { class: "legend" });
-  const evo = card("evolution", "Évolution semaine par semaine", null, "Part des tweets consacrés à l'écologie, par semaine. Mettez un candidat en avant pour le comparer à l'ensemble.", evoLegend, el("div", { class: "chart" }));
+  const evo = card("evolution", t("evo_title"), null, t("evo_sub"), evoLegend, el("div", { class: "chart" }));
   const heatBox = el("div", { class: "chart" });
-  const tabs = el("div", { class: "tabs", role: "tablist" }, [["themes", "Thèmes", "macro"], ["cadrage", "Cadrage", "cadrage"]].map(([k, label]) =>
+  const tabs = el("div", { class: "tabs controls", role: "tablist" }, [["themes", t("heat_themes")], ["cadrage", t("heat_frames")]].map(([k, label]) =>
     el("button", { class: "tab", type: "button", role: "tab", "aria-selected": String(S.apercuHeat === k), text: label, onclick: () => { S.apercuHeat = k; render(); } })));
-  const heat = card("apercu-heat", "De quoi parlent-ils, et comment ?", S.apercuHeat === "themes" ? "macro" : "cadrage",
-    "Part des tweets écologie de chaque candidat. Plus la case est foncée, plus la part est élevée. Cliquez sur une case pour lire des exemples dans l'onglet Discours.", tabs, heatBox);
-  panel.append(sail, pos, evo, heat);
+  const heat = card("apercu-heat", t("heat_title"), S.apercuHeat === "themes" ? "macro" : "cadrage", t("heat_sub"), tabs, heatBox);
+  panel.append(compass, sail, pos, evo, heat);
+  if (wrap) { drawCompass(wrap, rows, { interactive: true }); compassTable("boussole", rows); } else setTable("boussole", [], []);
   renderSaillance(sail.querySelector(".chart"), stats);
   renderPosition(pos.querySelector(".chart"), stats);
   renderEvolution(evo.querySelector(".chart"), evoLegend, tweets);
   const d = distribution(stats, S.apercuHeat, true);
-  renderHeat(heatBox, "apercu-heat", d.rows, d.cols, { empty: "Aucun tweet écologie sur cette période.", note: S.apercuHeat === "themes" ? "Un tweet peut aborder plusieurs thèmes." : null,
-    onCell: (r, c) => { S.discours = S.apercuHeat === "themes" ? "macro" : "cadrage"; S.discoursVar[S.discours] = S.apercuHeat; S.selectedCell = { id: "discours-heat", row: r.key, col: c.key }; go("discours"); } });
+  renderHeat(heatBox, "apercu-heat", d.rows, d.cols, { empty: t("empty_eco_period"), note: S.apercuHeat === "themes" ? t("multi_themes") : null,
+    onCell: (r, c) => { S.discours = S.apercuHeat === "themes" ? "macro" : "cadrage"; S.discoursVar[S.discours] = S.apercuHeat; S.discoursScope = "ecologie";
+      S.selectedCell = { id: "discours-heat", row: r.key, col: c.key }; S.scrollTo = { sel: "#examples", block: "start" }; go("discours", S.discours); } });
 }
 
 /* =================================================================== onglet Discours */
-const DISCOURS_ORDER = ["carre", "procedes", "topoi", "legitimation", "retardement", "visions", "ethos", "grammaire", "enonciation", "cadrage", "macro", "appropriation"];
+const DISCOURS_GROUPS = [
+  ["g_topics", ["macro", "cadrage", "appropriation"]],
+  ["g_usthem", ["carre", "procedes", "ethos"]],
+  ["g_arguing", ["topoi", "legitimation", "retardement", "visions"]],
+  ["g_language", ["grammaire", "enonciation"]],
+];
+const DISCOURS_ORDER = DISCOURS_GROUPS.flatMap(([, keys]) => keys);
 function frameworkCard(fw) {
-  return el("section", { class: "framework" }, el("h2", { text: fw.label }), el("p", { class: "who", text: fw.auteurs }),
-    el("p", { text: fw.resume }), el("p", {}, el("strong", { text: "Dans cette étude. " }), fw.dans_l_etude), refsList(fw.refs));
-}
-function segCtrl(items, current, onPick, label) {
-  return el("div", { class: "seg-ctrl", role: "group", "aria-label": label }, items.map(([k, text]) =>
-    el("button", { type: "button", "aria-pressed": String(k === current), text, onclick: () => onPick(k) })));
+  return el("section", { class: "framework" }, el("h2", { text: L(fw, "label") }), el("p", { class: "who", text: L(fw, "auteurs") }),
+    el("p", { text: L(fw, "resume") }), el("p", {}, el("strong", { text: t("in_this_study") + " " }), L(fw, "dans_l_etude")), refsList(fw.refs));
 }
 function examplesFor(row, col, variable) {
-  const pool = S.tweets.length ? filtered() : [];
-  const match = (t) => { const v = t[variable]; return Array.isArray(v) ? v.includes(col) : (V(variable).kind === "noul" ? v === true : v === col); };
-  const list = pool.filter((t) => t.c === row && t.e && t.t && match(t)).sort((a, b) => b.l - a.l).slice(0, 4);
-  const box = el("div", { class: "examples", id: "examples" }, el("h3", { text: `${candName(row)} · ${variable === "reactivite" ? V(variable).label : optLabel(variable, col)}` }));
-  const fr = optFr(variable, col);
-  if (fr) box.append(el("p", { class: "note-small", text: fr }));
-  if (!list.length) box.append(el("p", { class: "empty", text: "Aucun tweet écologie correspondant sur cette période. Le texte n'est publié que pour les tweets écologie." }));
+  const match = (tw) => { const v = tw[variable]; return Array.isArray(v) ? v.includes(col) : (V(variable).kind === "noul" ? v === true : v === col); };
+  const list = filtered().filter((tw) => tw.c === row && tw.e && tw.t && match(tw)).sort((a, b) => b.l - a.l).slice(0, 4);
+  const box = el("div", { class: "examples", id: "examples" }, el("h3", { text: `${candName(row)} · ${V(variable).kind === "noul" ? varLabel(variable) : optLabel(variable, col)}` }));
+  const def = optDef(variable, col);
+  if (def) box.append(el("p", { class: "note-small", text: def }));
+  if (LANG === "en") box.append(el("p", { class: "note-small", text: t("tweets_fr_note") }));
+  if (!list.length) box.append(el("p", { class: "empty", text: t("examples_empty") }));
   box.append(el("ol", { class: "tweet-list" }, list.map(tweetItem)));
   return box;
 }
-function renderDiscours(panel) {
-  const keys = DISCOURS_ORDER.filter((k) => S.fw.has(k));
-  if (!keys.includes(S.discours)) S.discours = keys[0];
-  const fw = S.fw.get(S.discours);
-  panel.replaceChildren(
-    el("div", { class: "section-intro" }, el("h2", { text: "Lire le discours" }),
-      el("p", { text: "Chaque onglet présente une théorie de l'analyse critique ou socio-cognitive du discours, puis la manière dont les candidats l'illustrent. Cliquez sur une case pour lire des tweets." })),
-    el("nav", { class: "subnav", "aria-label": "Cadres théoriques" }, keys.map((k) => el("a", { class: "tab", href: `#discours/${k}`, "aria-selected": String(k === S.discours), text: S.fw.get(k).label }))),
-    frameworkCard(fw));
-  if (S.discours === "appropriation") { renderAppropriation(panel); return; }
+function discoursHeat(panel) {
   const vars = S.data.codebook.variables.filter((v) => v.framework === S.discours && v.key !== "parle_ecologie");
+  if (!vars.length) return;
   const varKey = vars.some((v) => v.key === S.discoursVar[S.discours]) ? S.discoursVar[S.discours] : vars[0].key;
   const v = V(varKey);
   const ecologyOnly = v.scope === "ecologie" || S.discoursScope === "ecologie";
   const controls = el("div", { class: "controls" });
-  if (vars.length > 1) controls.append(segCtrl(vars.map((x) => [x.key, x.label]), varKey, (k) => { S.discoursVar[S.discours] = k; S.selectedCell = null; render(); }, "Variable"));
-  if (v.scope !== "ecologie") controls.append(segCtrl([["ecologie", "Tweets écologie"], ["tous", "Tous les tweets"]], S.discoursScope, (k) => { S.discoursScope = k; S.selectedCell = null; render(); }, "Corpus"));
+  if (vars.length > 1) controls.append(segCtrl(vars.map((x) => [x.key, L(x, "label")]), varKey, (k) => { S.discoursVar[S.discours] = k; S.selectedCell = null; render(); }, t("variable")));
+  if (v.scope !== "ecologie") controls.append(segCtrl([["ecologie", t("scope_eco")], ["tous", t("scope_all")]], S.discoursScope, (k) => { S.discoursScope = k; S.selectedCell = null; render(); }, t("corpus")));
   const heatBox = el("div", { class: "chart" });
-  const c = card("discours-heat", v.label, null, ecologyOnly ? "Part des tweets écologie de chaque candidat dans chaque catégorie." : "Part de l'ensemble des tweets de chaque candidat dans chaque catégorie, écologie ou non.", controls, heatBox);
+  const c = card("discours-heat", L(v, "label"), null, ecologyOnly ? t("heat_sub_eco") : t("heat_sub_all"), controls.childNodes.length ? controls : null, heatBox);
   panel.append(c);
-  const stats = byCandidate(filtered());
-  const d = distribution(stats, varKey, ecologyOnly);
+  const d = distribution(byCandidate(filtered()), varKey, ecologyOnly);
   renderHeat(heatBox, "discours-heat", d.rows, d.cols, {
-    empty: ecologyOnly ? "Aucun tweet écologie sur cette période." : "Aucun tweet sur cette période.",
-    note: v.kind === "multi" ? "Un tweet peut relever de plusieurs catégories." : (NULLISH.has((v.options[v.options.length - 1] || {}).key) ? "La catégorie « aucun » n'a pas de colonne : une ligne ne totalise donc pas 100 %." : null),
-    onCell: (r, col) => { S.selectedCell = { id: "discours-heat", row: r.key, col: col.key }; render(); const ex = $("#examples"); ex && ex.scrollIntoView({ behavior: "smooth", block: "nearest" }); },
+    empty: ecologyOnly ? t("empty_eco_period") : t("empty_period"),
+    note: v.kind === "multi" ? t("multi_cats") : (NULLISH.has((v.options[v.options.length - 1] || {}).key) ? t("none_col") : null),
+    onCell: (r, col) => { S.selectedCell = { id: "discours-heat", row: r.key, col: col.key }; S.scrollTo = { sel: "#examples", block: "nearest" }; render(); },
   });
-  if (v.options.length) c.append(el("details", { class: "codebook" }, el("summary", { text: "Les catégories" }),
-    el("dl", { class: "cat-list" }, v.options.filter((o) => !NULLISH.has(o.key)).map((o) => el("div", {}, el("dt", { text: o.label }), el("dd", { text: o.fr || "" }))))));
-  if (S.selectedCell && S.selectedCell.id === "discours-heat") c.append(examplesFor(S.selectedCell.row, S.selectedCell.col, varKey));
+  if (v.options.length) c.append(el("details", { class: "fold" }, el("summary", { text: t("categories") }),
+    el("dl", { class: "cat-list" }, v.options.filter((o) => !NULLISH.has(o.key)).map((o) => el("div", {}, el("dt", { text: L(o, "label") }), el("dd", { text: LANG === "en" ? o.en : o.fr || "" }))))));
+  if (S.selectedCell && S.selectedCell.id === "discours-heat" && d.cols.some((x) => x.key === S.selectedCell.col)) c.append(examplesFor(S.selectedCell.row, S.selectedCell.col, varKey));
+}
+function renderDiscours(panel) {
+  const keys = DISCOURS_ORDER.filter((k) => S.fw.has(k));
+  if (!keys.includes(S.discours)) S.discours = keys[0];
+  const i = keys.indexOf(S.discours);
+  const groups = DISCOURS_GROUPS.map(([g, ks]) => [g, ks.filter((k) => S.fw.has(k))]).filter(([, ks]) => ks.length);
+  const select = el("select", { id: "discours-select" }, groups.map(([g, ks]) => el("optgroup", { label: t(g) }, ks.map((k) => option(k, fwLabel(k), k === S.discours)))));
+  select.addEventListener("change", () => go("discours", select.value));
+  panel.replaceChildren(
+    sectionIntro(t("discours_title"), t("discours_intro")),
+    el("nav", { class: "subnav", "aria-label": t("frameworks_aria") }, groups.map(([g, ks]) => el("div", { class: "subnav-group" }, el("span", { class: "glabel", text: t(g) }),
+      ks.map((k) => el("a", { class: "tab", href: `#discours/${k}`, "aria-current": k === S.discours ? "true" : null, text: fwLabel(k) }))))),
+    el("label", { class: "field subnav-select" }, el("span", { text: t("choose_framework") }), select),
+    frameworkCard(S.fw.get(S.discours)));
+  if (S.discours === "appropriation") renderAppropriation(panel);
+  else discoursHeat(panel);
+  panel.append(el("nav", { class: "pager", "aria-label": t("pager_aria") },
+    i > 0 ? el("a", { class: "secondary-btn", href: `#discours/${keys[i - 1]}`, "aria-label": t("prev_aria", { label: fwLabel(keys[i - 1]) }) }, icon("arrowL", 16), fwLabel(keys[i - 1])) : el("span"),
+    i < keys.length - 1 ? el("a", { class: "secondary-btn", href: `#discours/${keys[i + 1]}`, "aria-label": t("next_aria", { label: fwLabel(keys[i + 1]) }) }, fwLabel(keys[i + 1]), icon("arrowR", 16)) : null));
 }
 
 function themeVector(tweets) {
   const keys = V("themes").options.map((o) => o.key);
-  const eco = tweets.filter((t) => t.e);
-  return { n: eco.length, v: keys.map((k) => (eco.length ? eco.filter((t) => t.themes.includes(k)).length / eco.length : 0)) };
+  const eco = tweets.filter((tw) => tw.e);
+  return { n: eco.length, v: keys.map((k) => (eco.length ? eco.filter((tw) => tw.themes.includes(k)).length / eco.length : 0)) };
 }
 function cosine(a, b) { let d = 0, x = 0, y = 0; for (let i = 0; i < a.length; i++) { d += a[i] * b[i]; x += a[i] * a[i]; y += b[i] * b[i]; } return x && y ? d / Math.sqrt(x * y) : 0; }
 function renderAppropriation(panel) {
   const tweets = filtered();
-  const blocs = (S.data.study.blocs || []).filter((b) => tweets.some((t) => (S.cand.get(t.c) || {}).bloc === b.key));
+  const blocs = (S.data.study.blocs || []).filter((b) => tweets.some((tw) => (S.cand.get(tw.c) || {}).bloc === b.key));
   const themes = V("themes").options;
-  const blocTweets = Object.fromEntries(blocs.map((b) => [b.key, tweets.filter((t) => (S.cand.get(t.c) || {}).bloc === b.key)]));
-  const sal = card("appro-sal", "Qui parle d'écologie, par famille politique", null, "Part des tweets consacrés à l'écologie dans chaque famille politique.", el("div", { class: "chart" }));
-  const prof = card("appro-blocs", "Le profil thématique de chaque famille", null, "Part des tweets écologie de chaque famille qui abordent chaque thème. C'est le « terrain » écologique de chaque camp.", el("div", { class: "chart" }));
-  const sim = card("appro-sim", "Sur le terrain de qui ?", null, "Ressemblance entre les thèmes écologiques de chaque candidat et ceux de chaque famille, de 0 à 1. Le candidat est retiré du calcul du profil de sa propre famille.", el("div", { class: "chart" }));
+  const blocTweets = Object.fromEntries(blocs.map((b) => [b.key, tweets.filter((tw) => (S.cand.get(tw.c) || {}).bloc === b.key)]));
+  const sal = card("appro-sal", t("appro_sal_title"), null, t("appro_sal_sub"), el("div", { class: "chart" }));
+  const prof = card("appro-blocs", t("appro_prof_title"), null, t("appro_prof_sub"), el("div", { class: "chart" }));
+  const sim = card("appro-sim", t("appro_sim_title"), null, t("appro_sim_sub"), el("div", { class: "chart" }));
   panel.append(sal, prof, sim);
   const salBox = sal.querySelector(".chart");
-  const salRows = blocs.map((b) => { const ts = blocTweets[b.key]; return { b, n: ts.length, eco: ts.filter((t) => t.e).length }; }).sort((a, b) => b.eco / b.n - a.eco / a.n);
+  const salRows = blocs.map((b) => { const ts = blocTweets[b.key]; return { b, n: ts.length, eco: ts.filter((tw) => tw.e).length }; }).sort((a, b) => b.eco / b.n - a.eco / a.n);
+  if (!salRows.length) salBox.append(el("p", { class: "empty", text: t("empty_period") }));
   const max = Math.max(...salRows.map((r) => r.eco / r.n), 0.0001);
-  salBox.append(el("div", { class: "bars" }, salRows.map((r) => el("div", { class: "bar-row" }, el("div", { class: "bar-name", text: r.b.label }),
-    el("div", { class: "bar-track" }, el("div", { class: "bar", style: `width:${(r.eco / r.n / max) * 80}%` }), el("span", { class: "bar-value", text: pct(r.eco / r.n) }))))));
-  setTable("appro-sal", [{ label: "Famille" }, { label: "Tweets", num: true }, { label: "Tweets écologie", num: true }, { label: "Part", num: true }], salRows.map((r) => [r.b.label, num(r.n), num(r.eco), pct(r.eco / r.n)]));
-  const cols = themes.map((o) => ({ key: o.key, label: o.label }));
-  const profRows = blocs.map((b) => { const tv = themeVector(blocTweets[b.key]); return { key: b.key, label: b.label, n: tv.n, avatar: false, values: Object.fromEntries(themes.map((o, i) => [o.key, tv.v[i]])) }; }).filter((r) => r.n > 0);
-  renderHeat(prof.querySelector(".chart"), "appro-blocs", profRows, cols, { rowHeader: "Famille", note: "Un tweet peut aborder plusieurs thèmes." });
+  salBox.append(el("div", { class: "bars" }, salRows.map((r) => {
+    const track = el("div", { class: "bar-track", "aria-label": t("aria_share", { name: L(r.b, "label"), v: pct(r.eco / r.n), eco: num(r.eco), n: num(r.n) }) },
+      el("div", { class: "bar", style: `width:${(r.eco / r.n / max) * 80}%` }), el("span", { class: "bar-value", text: pct(r.eco / r.n) }));
+    hoverable(track, () => ({ title: L(r.b, "label"), rows: [{ value: pct(r.eco / r.n), label: t("tt_eco_share") }, { value: num(r.eco), label: t("tt_eco_of", { n: num(r.n) }) }] }));
+    return el("div", { class: "bar-row" }, el("div", { class: "bar-name", text: L(r.b, "label") }), track);
+  })));
+  setTable("appro-sal", [{ label: t("th_family") }, { label: t("th_tweets"), num: true }, { label: t("th_eco_tweets"), num: true }, { label: t("th_share"), num: true }], salRows.map((r) => [L(r.b, "label"), num(r.n), num(r.eco), pct(r.eco / r.n)]));
+  const cols = themes.map((o) => ({ key: o.key, label: L(o, "label") }));
+  const profRows = blocs.map((b) => { const tv = themeVector(blocTweets[b.key]); return { key: b.key, label: L(b, "label"), n: tv.n, avatar: false, values: Object.fromEntries(themes.map((o, i) => [o.key, tv.v[i]])) }; }).filter((r) => r.n > 0);
+  renderHeat(prof.querySelector(".chart"), "appro-blocs", profRows, cols, { rowHeader: t("th_family"), note: t("multi_themes"), empty: t("empty_eco_period") });
   const stats = byCandidate(tweets).filter((s) => s.eco >= 5);
   const simRows = stats.map((s) => {
     const mine = themeVector(s.tweets).v;
     const values = {};
-    for (const b of blocs) { const others = blocTweets[b.key].filter((t) => t.c !== s.key); const tv = themeVector(others); values[b.key] = tv.n >= 5 ? cosine(mine, tv.v) : null; }
+    for (const b of blocs) { const others = blocTweets[b.key].filter((tw) => tw.c !== s.key); const tv = themeVector(others); values[b.key] = tv.n >= 5 ? cosine(mine, tv.v) : null; }
     return { key: s.key, label: candName(s.key), n: s.eco, values };
   });
-  renderHeat(sim.querySelector(".chart"), "appro-sim", simRows, blocs.map((b) => ({ key: b.key, label: b.label })), { domain: "minmax", format: (v) => F2.format(v), unit: "ressemblance",
-    empty: "Pas assez de tweets écologie : 5 au minimum par candidat.", note: "Plus la case est foncée, plus la ressemblance est forte ; l'échelle va de la plus faible à la plus forte ressemblance observée. Un candidat qui ressemble surtout à une autre famille que la sienne parle d'écologie sur le terrain de cette famille. Case vide : moins de 5 tweets écologie dans la famille, une fois le candidat retiré." });
+  renderHeat(sim.querySelector(".chart"), "appro-sim", simRows, blocs.map((b) => ({ key: b.key, label: L(b, "label") })), { domain: "minmax", format: f2, unit: t("similarity"),
+    empty: t("appro_sim_empty"), note: t("appro_sim_note") });
 }
 
 /* =================================================================== onglet Mots */
 function renderMots(panel) {
   const lx = S.data.lexique;
-  panel.replaceChildren(el("div", { class: "section-intro" }, el("h2", { text: "Les mots du débat" }),
-    el("p", { text: "Deux approches sans modèle de langage : suivre les formules qui structurent le débat, et repérer le vocabulaire propre à chaque candidat. Les calculs portent sur toute la période et tous les candidats." })));
-  if (!lx) { panel.append(el("p", { class: "empty", text: "Pas encore de données." })); return; }
+  panel.replaceChildren(sectionIntro(t("mots_title"), t("mots_intro"), LANG === "en" ? el("p", { class: "note-small", text: t("mots_fr_note") }) : null));
+  if (!lx) { panel.append(el("p", { class: "empty", text: t("no_data_yet") })); return; }
   const used = lx.formules.filter((f) => f.total > 0).sort((a, b) => b.total - a.total);
-  const fCard = card("formules", "Les formules", "formules", "Qui lance une expression, qui la reprend. Les variantes repérées sont listées dans config/formules.yaml.", el("div", { class: "chart" }));
+  const fCard = card("formules", t("formulas_title"), "formules", t("formulas_sub"), el("div", { class: "chart" }));
   panel.append(fCard);
   const fBox = fCard.querySelector(".chart");
-  if (!used.length) fBox.append(el("p", { class: "empty", text: "Aucune formule suivie n'apparaît encore dans le corpus." }));
+  const gloss = (f) => (LANG === "en" && f.en ? el("span", { class: "gloss", text: f.en }) : null);
+  if (!used.length) { fBox.append(el("p", { class: "empty", text: t("formulas_empty") })); setTable("formules", [], []); }
   else {
-    const table = el("table", { class: "formula-table" }, el("thead", {}, el("tr", {}, ["Formule", "Emplois", "Première occurrence", "Principaux utilisateurs", "Mots associés"].map((h, i) => el("th", { class: i === 1 ? "num" : null, text: h })))),
+    const table = el("table", { class: "wrap-cells" }, el("thead", {}, el("tr", {}, [t("th_formula"), t("th_uses"), t("th_first"), t("th_users"), t("th_assoc")].map((h, i) => el("th", { class: i === 1 ? "num" : null, text: h })))),
       el("tbody", {}, used.map((f) => {
         const c = S.cand.get(f.premiere.c);
         const top = Object.entries(f.par_candidat).slice(0, 3);
-        return el("tr", {}, el("td", { text: f.label }), el("td", { class: "num", text: num(f.total) }),
+        return el("tr", {}, el("td", {}, f.label, gloss(f)), el("td", { class: "num", text: num(f.total) }),
           el("td", {}, el("span", { class: "who-inline" }, avatar(f.premiere.c, 20), `${candName(f.premiere.c)}, ${fmtDay(f.premiere.date)}`), " ",
-            c && c.handle ? el("a", { href: `https://x.com/${c.handle}/status/${f.premiere.id}`, target: "_blank", rel: "noopener", text: "voir" }) : null),
-          el("td", {}, top.map(([k, n]) => el("div", { class: "who-inline" }, avatar(k, 20), `${candName(k)} : ${n}`))),
+            c && c.handle ? el("a", { href: `https://x.com/${c.handle}/status/${f.premiere.id}`, target: "_blank", rel: "noopener", text: t("see") }) : null),
+          el("td", {}, top.map(([k, n]) => el("div", { class: "who-row" }, avatar(k, 20), t("kv", { k: candName(k), v: num(n) })))),
           el("td", { text: (f.mots_associes || []).slice(0, 6).map((m) => m[0]).join(", ") }));
       })));
     fBox.append(el("div", { class: "table-view" }, table));
-    const rows = [...S.cands].map((c) => ({ key: c.key, label: c.name, counts: {}, values: Object.fromEntries(used.map((f) => [f.key, f.par_candidat[c.key] || 0])) }))
+    const rows = [...S.cands].map((c) => ({ key: c.key, label: c.name, values: Object.fromEntries(used.map((f) => [f.key, f.par_candidat[c.key] || 0])) }))
       .filter((r) => Object.values(r.values).some((v) => v > 0));
-    const heat = el("div", { style: "margin-top:16px" });
+    const heat = el("div", { class: "heat-gap" });
     fBox.append(heat);
-    renderHeat(heat, "formules", rows, used.map((f) => ({ key: f.key, label: f.label.replace(/[«»]/g, "").trim() })), { format: (v) => num(v), min0: "0", unit: "emplois" });
+    renderHeat(heat, "formules", rows, used.map((f) => ({ key: f.key, label: LANG === "en" && f.en ? f.en : f.label.replace(/[«»]/g, "").trim(), title: f.label })), { format: (v) => num(v), min0: "0", unit: t("uses") });
   }
   const groups = S.mots.mode === "blocs" ? lx.blocs : lx.candidats;
   const keys = Object.keys(groups).filter((k) => groups[k].length);
   if (!keys.includes(S.mots.who)) S.mots.who = S.mots.mode === "candidats" && keys.includes(S.focus) ? S.focus : keys[0];
   const name = (k) => (S.mots.mode === "blocs" ? blocLabel(k) : candName(k));
-  const sel = el("select", { "aria-label": "Choisir" }, keys.sort((a, b) => name(a).localeCompare(name(b), "fr")).map((k) => el("option", { value: k, selected: k === S.mots.who ? true : null, text: name(k) })));
+  const sel = el("select", { "aria-label": t("choose") }, keys.sort((a, b) => FMT.coll.compare(name(a), name(b))).map((k) => option(k, name(k), k === S.mots.who)));
   sel.addEventListener("change", () => { S.mots.who = sel.value; render(); });
   const kwBox = el("div", { class: "chart" });
-  const kCard = card("lexique", "Le vocabulaire spécifique", "lexique", "Les mots que chacun emploie significativement plus que les autres dans ses tweets écologie.",
-    el("div", { class: "controls" }, segCtrl([["candidats", "Par candidat"], ["blocs", "Par famille"]], S.mots.mode, (k) => { S.mots.mode = k; S.mots.who = ""; render(); }, "Regrouper"), keys.length ? el("label", { class: "field" }, sel) : null), kwBox);
+  const kCard = card("lexique", t("lex_title"), "lexique", t("lex_sub"),
+    el("div", { class: "controls" }, segCtrl([["candidats", t("by_candidate")], ["blocs", t("by_family")]], S.mots.mode, (k) => { S.mots.mode = k; S.mots.who = ""; render(); }, t("group_by")),
+      keys.length ? el("label", { class: "field" }, sel) : null), kwBox);
   panel.append(kCard);
   const words = groups[S.mots.who] || [];
-  if (!words.length) { kwBox.append(el("p", { class: "empty", text: "Pas assez de tweets écologie pour dégager un vocabulaire spécifique." })); setTable("lexique", [], []); return; }
+  if (!words.length) { kwBox.append(el("p", { class: "empty", text: t("lex_empty") })); setTable("lexique", [], []); return; }
   const mx = words[0][2];
-  kwBox.append(el("div", { class: "kw" }, words.map(([w, n, g]) => [el("span", { text: w }), el("div", { class: "b", style: `width:${(g / mx) * 100}%` }), el("span", { class: "v", text: `${n} emplois` })])));
-  setTable("lexique", [{ label: "Mot" }, { label: "Emplois", num: true }, { label: "G²", num: true }], words.map(([w, n, g]) => [w, num(n), PF.format(g)]));
+  kwBox.append(el("div", { class: "kw" }, words.map(([w, n, g]) => [el("span", { lang: "fr", text: w }), el("div", { class: "b", style: `width:${(g / mx) * 100}%` }), el("span", { class: "v", text: tn("n_uses", n) })])));
+  setTable("lexique", [{ label: t("th_word") }, { label: t("th_uses"), num: true }, { label: "G²", num: true }], words.map(([w, n, g]) => [w, num(n), FMT.p1.format(g)]));
 }
 
 /* =================================================================== tweets */
@@ -653,49 +904,57 @@ const POS_COLOR = { favorable_transition: "var(--accent)", critique_ecologie: "v
 function chip(text, varKey, optKey, extra) {
   return el("span", { class: "chip" + (extra ? " " + extra : "") }, text, varKey ? catInfoBtn(varKey, optKey) : null);
 }
-function tweetItem(t) {
-  const c = S.cand.get(t.c) || { name: t.c };
+function tweetItem(tw) {
+  const c = S.cand.get(tw.c) || { name: tw.c };
+  const all = [];
+  if (tw.position) all.push(el("span", { class: "chip" }, el("span", { class: "dot", style: `background:${POS_COLOR[tw.position] || "var(--muted)"}` }), optLabel("position", tw.position)));
+  (tw.themes || []).forEach((k) => all.push(chip(optLabel("themes", k))));
+  for (const key of ["cadrage", "vision", "ethos"]) if (tw[key] && !NULLISH.has(tw[key])) all.push(chip(t("kv", { k: varLabel(key), v: optLabel(key, tw[key]) }), key, tw[key]));
+  for (const key of ["procedes", "topoi", "legitimation", "retardement"]) (tw[key] || []).forEach((k) => all.push(chip(optLabel(key, k), key, k)));
+  (tw.lx || []).forEach((w) => all.push(el("span", { class: "chip lex", lang: "fr", text: LANG === "fr" ? `« ${w} »` : `“${w}”` })));
   const chips = el("div", { class: "chips" });
-  if (t.position) chips.append(el("span", { class: "chip" }, el("span", { class: "dot", style: `background:${POS_COLOR[t.position] || "var(--muted)"}` }), optLabel("position", t.position)));
-  (t.themes || []).forEach((k) => chips.append(chip(optLabel("themes", k))));
-  for (const key of ["cadrage", "vision", "ethos"]) if (t[key] && !NULLISH.has(t[key])) chips.append(chip(`${V(key).label} : ${optLabel(key, t[key])}`, key, t[key]));
-  for (const key of ["procedes", "topoi", "legitimation", "retardement"]) (t[key] || []).forEach((k) => chips.append(chip(optLabel(key, k), key, k)));
-  (t.lx || []).forEach((w) => chips.append(el("span", { class: "chip lex", text: `« ${w} »` })));
-  const foot = [t.s === "c" ? "Codé par Claude" : "Codé par Jev", t.p !== null && t.p !== undefined ? `p(écologie) = ${F2.format(t.p)}` : null, t.im ? `Présupposé : ${t.im}` : null].filter(Boolean).join(" · ");
+  const draw = () => {
+    const open = S.openChips.has(tw.i) || all.length <= CHIP_LIMIT + 1;
+    const more = all.length - CHIP_LIMIT;
+    chips.replaceChildren(open ? all : all.slice(0, CHIP_LIMIT),
+      all.length > CHIP_LIMIT + 1 ? el("button", { class: "chip-more", type: "button", "aria-expanded": String(open), "aria-label": open ? t("chips_less") : t("chips_more_aria", { n: more }), text: open ? t("chips_less") : `+${more}`,
+        onclick: () => { if (open) S.openChips.delete(tw.i); else S.openChips.add(tw.i); draw(); chips.querySelector(".chip-more").focus(); } }) : null);
+  };
+  draw();
+  const foot = [t("coded_by", { engine: tw.s === "c" ? "Claude" : "Jev" }), tw.p !== null && tw.p !== undefined ? t("p_eco", { p: f2(tw.p) }) : null, tw.im ? t("presupposed", { x: tw.im }) : null].filter(Boolean).join(" · ");
   return el("li", { class: "tweet" },
-    el("div", { class: "tweet-head" }, avatar(t.c, 28), el("strong", { text: c.name }), el("span", { text: fmtDay(t.d) }), el("span", { text: `${num(t.l)} j'aime` }),
-      c.handle ? el("a", { href: `https://x.com/${c.handle}/status/${t.i}`, target: "_blank", rel: "noopener", text: "Voir sur X" }) : null),
-    el("p", { class: "tweet-text", text: t.t || "" }), t.rs ? el("p", { class: "tweet-resume", text: t.rs }) : null, chips, el("div", { class: "tweet-foot", text: foot }));
+    el("div", { class: "tweet-head" }, avatar(tw.c, 28), el("strong", { text: c.name }), el("span", { text: fmtDay(tw.d) }), el("span", { text: tn("n_likes", tw.l || 0) }),
+      LANG === "en" ? el("span", { class: "lang-tag", title: t("in_french"), text: "FR" }) : null,
+      c.handle ? el("a", { href: `https://x.com/${c.handle}/status/${tw.i}`, target: "_blank", rel: "noopener", text: t("see_on_x") }) : null),
+    el("p", { class: "tweet-text", lang: "fr", text: tw.t || "" }), tw.rs ? el("p", { class: "tweet-resume", lang: "fr", text: tw.rs }) : null, chips, el("div", { class: "tweet-foot", text: foot }));
 }
-function option(value, label, selected) { return el("option", { value, selected: selected ? true : null, text: label }); }
 function renderTweets(panel) {
   const x = S.x;
-  const sel = (id, items, cur, all = "Tous") => { const s = el("select", { id }, option("", all, !cur), items.map(([k, l]) => option(k, l, k === cur))); return s; };
-  const optsOf = (v) => V(v).options.filter((o) => !NULLISH.has(o.key)).map((o) => [o.key, o.label]);
-  const concept = el("select", { id: "x-concept" }, option("", "Tous", !x.concept),
-    ["procedes", "topoi", "legitimation", "retardement", "vision", "ethos"].map((vk) => el("optgroup", { label: V(vk).label }, optsOf(vk).map(([k, l]) => option(`${vk}:${k}`, l, x.concept === `${vk}:${k}`)))));
-  const q = el("input", { id: "x-q", type: "search", placeholder: "Mot, expression…", value: x.q });
+  const sel = (id, items, cur, all = t("all_m")) => el("select", { id }, option("", all, !cur), items.map(([k, l]) => option(k, l, k === cur)));
+  const optsOf = (v) => V(v).options.filter((o) => !NULLISH.has(o.key)).map((o) => [o.key, L(o, "label")]);
+  const concept = el("select", { id: "x-concept" }, option("", t("all_m"), !x.concept),
+    ["procedes", "topoi", "legitimation", "retardement", "vision", "ethos"].map((vk) => el("optgroup", { label: varLabel(vk) }, optsOf(vk).map(([k, l]) => option(`${vk}:${k}`, l, x.concept === `${vk}:${k}`)))));
+  const q = el("input", { id: "x-q", type: "search", placeholder: t("search_ph"), value: x.q });
   const fields = el("div", { class: "explorer-filters" },
-    el("label", { class: "field" }, el("span", { text: "Candidat" }), sel("x-cand", [...S.cands].sort((a, b) => a.name.localeCompare(b.name, "fr")).map((c) => [c.key, c.name]), x.cand)),
-    el("label", { class: "field" }, el("span", { text: "Thème" }), sel("x-theme", optsOf("themes"), x.theme)),
-    el("label", { class: "field" }, el("span", { text: "Position" }), sel("x-pos", optsOf("position"), x.pos, "Toutes")),
-    el("label", { class: "field" }, el("span", { text: "Cadrage" }), sel("x-cad", optsOf("cadrage"), x.cad)),
-    el("label", { class: "field" }, el("span", { text: "Concept" }), concept),
-    el("label", { class: "field grow" }, el("span", { text: "Rechercher" }), q),
-    el("label", { class: "field" }, el("span", { text: "Trier" }), sel("x-sort", [["likes", "Plus aimés"]], x.sort === "likes" ? "likes" : "", "Plus récents")));
+    el("label", { class: "field" }, el("span", { text: t("f_candidate") }), sel("x-cand", [...S.cands].sort(byName).map((c) => [c.key, c.name]), x.cand)),
+    el("label", { class: "field" }, el("span", { text: t("f_theme") }), sel("x-theme", optsOf("themes"), x.theme)),
+    el("label", { class: "field" }, el("span", { text: t("f_position") }), sel("x-pos", optsOf("position"), x.pos, t("all_f"))),
+    el("label", { class: "field" }, el("span", { text: t("f_frame") }), sel("x-cad", optsOf("cadrage"), x.cad)),
+    el("label", { class: "field" }, el("span", { text: t("f_concept") }), concept),
+    el("label", { class: "field grow" }, el("span", { text: t("f_search") }), q),
+    el("label", { class: "field" }, el("span", { text: t("f_sort") }), sel("x-sort", [["likes", t("sort_likes")]], x.sort === "likes" ? "likes" : "", t("sort_recent"))));
   const list = el("ol", { class: "tweet-list" });
-  const more = el("button", { class: "ghost-btn more", type: "button", text: "Afficher plus" });
-  const sub = el("p", { class: "sub" });
-  panel.replaceChildren(el("div", { class: "section-intro" }, el("h2", { text: "Explorer les tweets écologie" }),
-    el("p", { text: "Chaque tweet avec son codage complet. Les bulles « i » donnent la définition de chaque catégorie. Les filtres s'ajoutent à la période et à la famille politique choisies en haut de page." })),
-    el("section", { class: "card" }, fields, sub, list, more));
+  const more = el("button", { class: "ghost-btn", type: "button", text: t("show_more") });
+  const sub = el("p", { class: "sub", role: "status" });
+  panel.replaceChildren(sectionIntro(t("tweets_title"), t("tweets_intro"), LANG === "en" ? el("p", { class: "note-small", text: t("tweets_fr_note") }) : null),
+    el("section", { class: "card" }, fields, sub, list, el("div", { class: "btn-row" }, more)));
   const update = () => {
-    let items = filtered().filter((t) => t.e && t.t && (!x.cand || t.c === x.cand) && (!x.theme || t.themes.includes(x.theme)) && (!x.pos || t.position === x.pos) && (!x.cad || t.cadrage === x.cad));
-    if (x.concept) { const [vk, ok] = x.concept.split(":"); items = items.filter((t) => (Array.isArray(t[vk]) ? t[vk].includes(ok) : t[vk] === ok)); }
-    if (x.q) { const n = x.q.toLowerCase(); items = items.filter((t) => (t.t || "").toLowerCase().includes(n) || (t.rs || "").toLowerCase().includes(n)); }
+    let items = filtered().filter((tw) => tw.e && tw.t && (!x.cand || tw.c === x.cand) && (!x.theme || tw.themes.includes(x.theme)) && (!x.pos || tw.position === x.pos) && (!x.cad || tw.cadrage === x.cad));
+    if (x.concept) { const [vk, ok] = x.concept.split(":"); items = items.filter((tw) => (Array.isArray(tw[vk]) ? tw[vk].includes(ok) : tw[vk] === ok)); }
+    if (x.q) { const n = x.q.toLowerCase(); items = items.filter((tw) => (tw.t || "").toLowerCase().includes(n) || (tw.rs || "").toLowerCase().includes(n)); }
     items.sort(x.sort === "likes" ? (a, b) => b.l - a.l : (a, b) => (a.d < b.d ? 1 : a.d > b.d ? -1 : 0));
-    sub.textContent = `${num(items.length)} tweet${items.length > 1 ? "s" : ""} écologie correspondant à la sélection.`;
-    list.replaceChildren(...(items.length ? items.slice(0, x.shown).map(tweetItem) : [el("li", { class: "empty", text: "Aucun tweet ne correspond." })]));
+    sub.textContent = tn("tweets_count", items.length);
+    list.replaceChildren(...(items.length ? items.slice(0, x.shown).map(tweetItem) : [el("li", { class: "empty", text: t("tweets_none") })]));
     more.hidden = items.length <= x.shown;
   };
   const sync = () => { Object.assign(x, { cand: $("#x-cand").value, theme: $("#x-theme").value, pos: $("#x-pos").value, cad: $("#x-cad").value, concept: $("#x-concept").value, q: $("#x-q").value.trim(), sort: $("#x-sort").value || "date", shown: 15 }); update(); };
@@ -707,78 +966,82 @@ function renderTweets(panel) {
 
 /* =================================================================== onglet Méthode */
 function agreementTable(ev) {
-  const fmt = (v) => (v === null || v === undefined ? "–" : F2.format(v));
-  const status = (raw) => { const a = raw === null || raw === undefined ? raw : Math.round(raw * 100) / 100; return a === null || a === undefined ? el("span", { text: "–" })
-    : a >= 0.8 ? el("span", { class: "status good" }, el("span", { class: "ico", text: "✓" }), "fiable")
-    : a >= 0.667 ? el("span", { class: "status warning" }, el("span", { class: "ico", text: "~" }), "à confirmer")
-    : el("span", { class: "status critical" }, el("span", { class: "ico", text: "✕" }), "insuffisant"); };
-  const rows = ev.variables.map((v) => [V(v.variable)?.label || v.variable, v.n, v.accord === null ? "–" : pct(v.accord), fmt(v.kappa), fmt(v.alpha), status(v.alpha)]);
-  for (const [k, m] of Object.entries(ev.multi || {})) rows.push([`${V(k)?.label || k} (moyenne par catégorie)`, m.n, m.jaccard_moyen === null ? "–" : `Jaccard ${fmt(m.jaccard_moyen)}`, "–", fmt(m.alpha_moyen), status(m.alpha_moyen)]);
-  return el("div", { class: "table-view" }, el("table", { class: "small-table" },
-    el("thead", {}, el("tr", {}, ["Variable", "n", "Accord", "Kappa", "Alpha", "Lecture"].map((h, i) => el("th", { class: i && i < 5 ? "num" : null, text: h })))),
+  const fmt = (v) => (v === null || v === undefined ? "–" : f2(v));
+  const status = (raw) => {
+    const a = raw === null || raw === undefined ? null : Math.round(raw * 100) / 100;
+    if (a === null) return el("span", { text: "–" });
+    if (a >= 0.8) return el("span", { class: "status good" }, el("span", { class: "ico", "aria-hidden": "true", text: "✓" }), t("rel_good"));
+    if (a >= 0.667) return el("span", { class: "status warning" }, el("span", { class: "ico", "aria-hidden": "true", text: "~" }), t("rel_warn"));
+    return el("span", { class: "status critical" }, el("span", { class: "ico", "aria-hidden": "true", text: "✕" }), t("rel_bad"));
+  };
+  const rows = ev.variables.map((v) => [varLabel(v.variable), num(v.n), v.accord === null ? "–" : pct(v.accord), fmt(v.kappa), fmt(v.alpha), status(v.alpha)]);
+  for (const [k, m] of Object.entries(ev.multi || {})) rows.push([t("multi_mean", { label: varLabel(k) }), num(m.n), m.jaccard_moyen === null ? "–" : `Jaccard ${fmt(m.jaccard_moyen)}`, "–", fmt(m.alpha_moyen), status(m.alpha_moyen)]);
+  return el("div", { class: "table-view" }, el("table", {},
+    el("thead", {}, el("tr", {}, [t("th_variable"), "n", t("th_agreement"), "Kappa", "Alpha", t("th_reading")].map((h, i) => el("th", { class: i && i < 5 ? "num" : null, text: h })))),
     el("tbody", {}, rows.map((r) => el("tr", {}, r.map((v, i) => el("td", { class: i && i < 5 ? "num" : null }, v instanceof Node ? v : String(v))))))));
 }
+const METHODE_SECTIONS = ["questions", "corpus", "moteurs", "fiabilite", "comptes", "limites", "codebook", "credits"];
 function renderMethode(panel) {
   const d = S.data;
-  const parts = [el("div", { class: "section-intro" }, el("h2", { text: "Méthode" }),
-    el("p", { text: "Comment les tweets sont collectés, codés et vérifiés, et ce que cette étude ne permet pas de dire." }))];
-  if ((d.study.questions || []).length) parts.push(el("section", { class: "card" }, el("h2", { text: "Les questions de l'étude" }),
-    el("dl", { class: "cat-list" }, d.study.questions.map((q) => el("div", {}, el("dt", { text: q.titre }), el("dd", { text: q.texte }))))));
-  parts.push(el("section", { class: "card" }, el("h2", { text: "Le corpus" }),
-    el("p", { class: "sub", text: `Tweets originaux des comptes personnels des candidats, réponses et reposts exclus, depuis le ${fmtDay(d.study.start)}. Chaque compte est d'abord rattrapé intégralement, puis collecté chaque jour. Le texte n'est publié ici que pour les tweets qui parlent d'écologie.` }),
-    el("div", { class: "table-view" }, el("table", {}, el("thead", {}, el("tr", {}, ["Phase", "Début", "Fin"].map((h) => el("th", { text: h })))),
-      el("tbody", {}, (d.study.phases || []).map((p) => el("tr", {}, el("td", { text: p.label }), el("td", { text: fmtDay(p.start) }), el("td", { text: fmtDay(p.end) }))))))));
-  parts.push(el("h2", { text: "Les moteurs de codage", style: "margin:28px 0 12px" }), ...d.codebook.engines.filter((e) => e.key !== "fiabilite").map(frameworkCard));
-  const val = el("section", { class: "card" }, titleWithInfo("h2", "Fiabilité du codage", "fiabilite"));
+  const section = (key, ...body) => el("section", { class: "card", id: "m-" + key }, ...body);
+  const parts = [sectionIntro(t("methode_title"), t("methode_intro")),
+    el("nav", { class: "toc", "aria-label": t("toc_aria") }, METHODE_SECTIONS.map((k) => el("a", { class: "tab", href: `#methode/${k}`, text: t("m_" + k) })))];
+  if ((d.study.questions || []).length) parts.push(section("questions", el("h2", { text: t("m_questions_title") }),
+    el("dl", { class: "cat-list" }, d.study.questions.map((q) => el("div", {}, el("dt", { text: L(q, "titre") }), el("dd", { text: L(q, "texte") }))))));
+  parts.push(section("corpus", el("h2", { text: t("m_corpus") }), el("p", { class: "sub", text: t("m_corpus_text", { date: fmtDay(d.study.start) }) }),
+    el("div", { class: "table-view" }, el("table", {}, el("thead", {}, el("tr", {}, [t("th_phase"), t("th_start"), t("th_end")].map((h) => el("th", { text: h })))),
+      el("tbody", {}, (d.study.phases || []).map((p) => el("tr", {}, el("td", { text: L(p, "label") }), el("td", { text: fmtDay(p.start) }), el("td", { text: fmtDay(p.end) }))))))));
+  parts.push(el("div", { id: "m-moteurs" }, el("h2", { class: "block-title", text: t("m_moteurs") }), ...d.codebook.engines.filter((e) => e.key !== "fiabilite").map(frameworkCard)));
+  const val = section("fiabilite", titleWithInfo("h2", t("m_reliability_title"), "fiabilite"));
   const v = d.validation;
   if (!v || !v.double_code || !v.double_code.n) {
-    val.append(el("p", { class: "sub", text: "Claude n'a pas encore servi de second codeur : les résultats reposent sur le seul codage de Jev." }));
-    if (v && v.routage) val.append(el("p", { class: "note-small", text: `${num(v.routage.tweets_codes_jev)} tweets codés par Jev, dont ${num(v.routage.incertains_en_attente)} décisions incertaines en attente.` }));
+    val.append(el("p", { class: "sub", text: t("m_no_claude") }));
+    if (v && v.routage) val.append(el("p", { class: "note-small", text: t("m_routing", { jev: num(v.routage.tweets_codes_jev), pending: num(v.routage.incertains_en_attente) }) }));
   } else {
-    const s = v.echantillon.aleatoire;
-    val.append(el("p", { class: "sub", text: `${num(v.routage.tweets_codes_jev)} tweets codés par Jev, ${num(v.routage.tweets_codes_claude)} par Claude. Lecture de l'alpha de Krippendorff : 0,8 et plus fiable, de 0,667 à 0,8 à confirmer, en dessous insuffisant.` }));
-    if (s && s.n) val.append(el("h3", { text: `Échantillon de validation aléatoire, ${num(s.n)} tweets` }), agreementTable(s));
-    val.append(el("h3", { text: `Tous les tweets codés par les deux moteurs, ${num(v.double_code.n)}` }),
-      el("p", { class: "note-small", text: "Inclut les tweets confiés à Claude parce qu'ils étaient incertains : l'accord y est mécaniquement plus faible." }), agreementTable(v.double_code));
+    const s = v.echantillon && v.echantillon.aleatoire;
+    val.append(el("p", { class: "sub", text: t("m_routing_both", { jev: num(v.routage.tweets_codes_jev), claude: num(v.routage.tweets_codes_claude) }) }));
+    if (s && s.n) val.append(el("h3", { class: "block-sub", text: t("m_sample", { n: num(s.n) }) }), agreementTable(s));
+    val.append(el("h3", { class: "block-sub", text: t("m_double", { n: num(v.double_code.n) }) }), el("p", { class: "note-small", text: t("m_double_note") }), agreementTable(v.double_code));
   }
   parts.push(val);
-  parts.push(el("section", { class: "card" }, el("h2", { text: "Les comptes suivis" }), el("div", { class: "table-view" }, el("table", {},
-    el("thead", {}, el("tr", {}, ["Candidat", "Compte X", "Statut", "Dernier tweet", "Remarque"].map((h) => el("th", { text: h })))),
-    el("tbody", {}, [...S.cands].sort((a, b) => a.name.localeCompare(b.name, "fr")).map((c) => el("tr", {},
-      el("td", {}, el("span", { class: "who-inline" }, avatar(c.key, 20), c.name)), el("td", { text: c.handle ? "@" + c.handle : "aucun" }),
-      el("td", { text: (ACCOUNT[c.compte] || { text: "Actif" }).text }), el("td", { text: c.dernier_tweet ? fmtDay(c.dernier_tweet) : "–" }), el("td", { text: c.note || "" }))))))));
-  parts.push(el("section", { class: "card" }, el("h2", { text: "Limites" }), el("ul", { class: "sub" },
-    el("li", { text: "X n'est qu'un fragment du discours de campagne, souvent rédigé par des équipes, et certains candidats y sont peu présents." }),
-    el("li", { text: "Les modèles se trompent, notamment sur l'ironie, les tweets très courts et les concepts les plus subtils de la grille." }),
-    el("li", { text: "Un pourcentage calculé sur moins de 20 tweets est fragile ; il est signalé comme tel." }),
-    el("li", { text: "L'accord entre deux modèles mesure leur convergence, pas la justesse du codage." }),
-    el("li", { text: "Les jeux comparent des réactions à des tweets, pas des programmes. Ce ne sont ni des sondages ni des conseils de vote." }))));
-  const book = el("details", { class: "codebook" }, el("summary", { text: "Le livre de codes complet" }));
+  parts.push(section("comptes", el("h2", { text: t("m_comptes") }), el("div", { class: "table-view" }, el("table", { class: "wrap-cells" },
+    el("thead", {}, el("tr", {}, [t("th_candidate"), t("th_account"), t("th_status"), t("th_last"), t("th_note")].map((h) => el("th", { text: h })))),
+    el("tbody", {}, [...S.cands].sort(byName).map((c) => el("tr", {},
+      el("td", {}, el("span", { class: "who-inline" }, avatar(c.key, 20), c.name)),
+      el("td", {}, c.handle ? el("a", { href: `https://x.com/${c.handle}`, target: "_blank", rel: "noopener", text: "@" + c.handle }) : t("none_m")),
+      el("td", { text: accountText(c.compte) }), el("td", { text: c.dernier_tweet ? fmtDay(c.dernier_tweet) : "–" }), el("td", { text: L(c, "note") }))))))));
+  parts.push(section("limites", el("h2", { text: t("m_limites") }), el("ul", { class: "sub" }, [1, 2, 3, 4, 5].map((i) => el("li", { text: t("limit_" + i, { n: MIN_N }) })))));
+  const book = el("details", { class: "fold" }, el("summary", { text: t("m_codebook_full") }));
   for (const fw of d.codebook.frameworks) {
     const vars = d.codebook.variables.filter((x) => x.framework === fw.key);
-    book.append(el("h3", { text: `${fw.label} · ${fw.auteurs}` }), el("p", { class: "note-small", text: fw.dans_l_etude }));
-    for (const x of vars) book.append(el("p", {}, el("strong", { text: x.label }), x.scope === "ecologie" ? " (tweets écologie)" : ""),
-      el("dl", {}, x.options.map((o) => [el("dt", { text: o.label }), el("dd", { text: [o.fr, `Définition donnée aux modèles : ${o.description}`].filter(Boolean).join(" ") })])));
+    book.append(el("h3", { class: "block-sub", text: `${L(fw, "label")} · ${L(fw, "auteurs")}` }), el("p", { class: "note-small", text: L(fw, "dans_l_etude") }));
+    for (const x of vars) book.append(el("p", {}, el("strong", { text: L(x, "label") }), x.scope === "ecologie" ? " " + t("eco_scope") : ""),
+      el("dl", { class: "defs" }, x.options.map((o) => [el("dt", { text: L(o, "label") }), el("dd", { text: LANG === "en" ? o.en : [o.fr, t("model_def", { d: o.en })].filter(Boolean).join(" ") })])));
   }
-  parts.push(el("section", { class: "card" }, el("h2", { text: "Livre de codes" }), el("p", { class: "sub", text: "Les définitions données aux modèles sont en anglais, langue principale de Jev ; les tweets sont analysés en français." }), book));
+  parts.push(section("codebook", el("h2", { text: t("m_codebook") }), el("p", { class: "sub", text: t("m_codebook_sub") }), book));
   const photos = S.cands.filter((c) => c.photo);
-  if (photos.length) parts.push(el("section", { class: "card" }, el("h2", { text: "Crédits photographiques" }), el("ul", { class: "note-small" },
-    photos.map((c) => el("li", {}, `${c.name} : ${c.photo.auteur || "auteur inconnu"}${c.photo.licence ? ", " + c.photo.licence : ""}, `, c.photo.source ? el("a", { href: c.photo.source, target: "_blank", rel: "noopener", text: "source" }) : null)))));
+  if (photos.length) parts.push(section("credits", el("h2", { text: t("m_credits") }), el("ul", { class: "note-small credits" },
+    photos.map((c) => el("li", {}, `${t("kv", { k: c.name, v: `${L(c.photo, "auteur") || t("unknown_author")}${c.photo.licence ? ", " + c.photo.licence : ""}` })}, `,
+      c.photo.source ? el("a", { href: c.photo.source, target: "_blank", rel: "noopener", text: t("source") }) : null)))));
   panel.replaceChildren(...parts);
 }
 
 /* =================================================================== jeux */
-const GAMES = [
-  { key: "qui", title: "Qui a tweeté ?", text: "Un tweet anonymisé, quatre candidats. Retrouvez l'auteur, puis découvrez les indices du discours qui le trahissaient.", rounds: 8 },
-  { key: "agent", title: "Classez comme un agent", text: "Codez un tweet comme le font nos agents : position, cadrage, procédés. Puis comparez vos réponses à celles de Jev et de Claude.", rounds: 6 },
-  { key: "situer", title: "Où vous situez-vous ?", text: "Réagissez à douze tweets anonymisés et découvrez de quels candidats, et de quelle vision de l'écologie, vous êtes le plus proche.", rounds: 12 },
-];
-async function loadGames() {
-  if (S.games) return S.games;
-  try { const r = await fetch("games.json", { cache: "no-cache" }); S.games = r.ok ? await r.json() : { items: [] }; } catch (e) { S.games = { items: [] }; }
-  S.games.items = (S.games.items || []).filter((it) => S.cand.has(it.c) && it.t);
-  return S.games;
+const GAMES = { qui: { rounds: 8, min: 4, minutes: 3 }, agent: { rounds: 6, min: 3, minutes: 5 }, situer: { rounds: 12, min: 6, minutes: 3 } };
+const GAME_KEYS = Object.keys(GAMES);
+function gameItems(key) {
+  const items = S.games.items;
+  if (key === "agent") return items.filter((it) => it.jev && it.jev.position && it.jev.cadrage);
+  if (key === "situer") { const g = growthMap(); return items.filter((it) => STANCE[it.codes.position] && it.codes.vision in g); }
+  return items;
 }
+function gameAvailable(key) {
+  if (!S.data || gameItems(key).length < GAMES[key].min) return false;
+  if (key === "qui") return new Set(S.games.items.map((it) => it.c)).size >= 2;
+  if (key === "situer") return compassRows(S.tweets).rows.length >= 2;
+  return true;
+}
+// Tirage qui alterne les candidats, pour ne pas enchaîner les tweets d'un même auteur
 function pickSpread(items, n, rnd = Math.random) {
   const by = new Map();
   for (const it of shuffle(items, rnd)) { if (!by.has(it.c)) by.set(it.c, []); by.get(it.c).push(it); }
@@ -786,270 +1049,555 @@ function pickSpread(items, n, rnd = Math.random) {
   while (out.length < n && [...by.values()].some((l) => l.length)) for (const l of shuffle([...by.values()], rnd)) { if (l.length && out.length < n) out.push(l.pop()); }
   return out;
 }
-function cluesFor(it) {
-  if (it.ind && it.ind.length) return it.ind.map((t) => el("li", { text: t }));
-  const c = it.codes || {}, li = [];
-  if (c.cadrage && !NULLISH.has(c.cadrage)) li.push(el("li", {}, `Cadrage : ${optLabel("cadrage", c.cadrage)}. `, infoBtn("cadrage")));
-  if (c.vision && !NULLISH.has(c.vision)) li.push(el("li", {}, `Vision de l'écologie : ${optLabel("vision", c.vision)}. `, infoBtn("visions")));
-  if (c.polarisation && !NULLISH.has(c.polarisation)) li.push(el("li", {}, `Carré idéologique : ${optLabel("polarisation", c.polarisation).toLowerCase()}. `, infoBtn("carre")));
-  if ((c.topoi || []).length) li.push(el("li", {}, `Topoï : ${c.topoi.map((k) => optLabel("topoi", k).toLowerCase()).join(", ")}. `, infoBtn("topoi")));
-  if ((c.procedes || []).length) li.push(el("li", {}, `Procédés : ${c.procedes.map((k) => optLabel("procedes", k).toLowerCase()).join(", ")}. `, infoBtn("procedes")));
-  if ((c.retardement || []).length) li.push(el("li", {}, `Retardement : ${c.retardement.map((k) => optLabel("retardement", k).toLowerCase()).join(", ")}. `, infoBtn("retardement")));
-  return li;
-}
-function quote(it) {
-  return [el("blockquote", { class: "quote", text: it.t }),
-    el("p", { class: "quote-meta", text: `Tweet anonymisé ${it.m === "claude" ? "par Claude" : "automatiquement"}, publié le ${fmtDay(it.d)}.` })];
-}
-function originalLink(it) { const c = S.cand.get(it.c); return c && c.handle ? el("a", { href: `https://x.com/${c.handle}/status/${it.i}`, target: "_blank", rel: "noopener", text: "Voir le tweet original sur X" }) : null; }
-function gameShell(panel, title, i, total, extra) {
-  panel.replaceChildren(el("div", { class: "game" },
-    el("div", { class: "game-top" }, el("button", { class: "ghost-btn", type: "button", text: "← Tous les jeux", onclick: () => { S.play = null; render(); } }), el("span", { text: `${title} · ${Math.min(i + 1, total)} sur ${total}${extra ? " · " + extra : ""}` })),
-    el("div", { class: "progress" }, el("span", { style: `width:${(i / total) * 100}%` }))));
-  return panel.querySelector(".game");
-}
-function endLinks() {
-  return el("p", {}, "Pour aller plus loin : ", ["carre", "cadrage", "topoi", "procedes", "visions"].map((k, i) => [i ? " · " : "", el("a", { href: `#discours/${k}`, text: S.fw.get(k).label })]));
-}
-
-function startGame(key) {
-  const items = S.games.items;
-  const g = GAMES.find((x) => x.key === key);
+function newGame(key) {
+  if (!gameAvailable(key)) return null;
+  const g = GAMES[key], items = gameItems(key);
   if (key === "qui") {
-    const chosen = pickSpread(items, g.rounds);
-    const pool = [...new Set(items.map((it) => it.c))];
-    S.play = { key, i: 0, score: 0, answered: null, rounds: chosen.map((it) => {
-      const same = shuffle(pool.filter((k) => k !== it.c && S.cand.get(k).bloc === S.cand.get(it.c).bloc)).slice(0, 1);
+    const pool = [...new Set(S.games.items.map((it) => it.c))];
+    return { key, i: 0, rounds: pickSpread(items, g.rounds).map((it) => {
+      const bloc = (S.cand.get(it.c) || {}).bloc;
+      const same = shuffle(pool.filter((k) => k !== it.c && (S.cand.get(k) || {}).bloc === bloc)).slice(0, 1);
       const other = shuffle(pool.filter((k) => k !== it.c && !same.includes(k))).slice(0, 3 - same.length);
-      return { it, options: shuffle([it.c, ...same, ...other]) };
+      return { it, options: shuffle([it.c, ...same, ...other]), pick: null };
     }) };
-  } else if (key === "agent") {
-    S.play = { key, i: 0, agree: 0, total: 0, answered: null, rounds: pickSpread(items.filter((it) => it.jev && it.jev.position && it.jev.cadrage), g.rounds).map((it) => {
-      const pr = Object.entries(it.jev.procedes || {}).sort((a, b) => b[1] - a[1]);
-      const opts = shuffle([...pr.slice(0, 3), ...shuffle(pr.slice(3)).slice(0, 3)].map(([k]) => k));
-      return { it, procOpts: opts };
-    }) };
-  } else {
-    const ok = items.filter((it) => ["favorable_transition", "critique_ecologie"].includes(it.codes.position) && it.codes.vision && !NULLISH.has(it.codes.vision));
-    const fav = pickSpread(ok.filter((it) => it.codes.position === "favorable_transition"), g.rounds / 2);
-    const cri = pickSpread(ok.filter((it) => it.codes.position === "critique_ecologie"), g.rounds - fav.length);
-    S.play = { key, i: 0, rounds: shuffle([...fav, ...cri]).map((it) => ({ it, r: null })) };
   }
+  if (key === "agent") {
+    return { key, i: 0, rounds: pickSpread(items, g.rounds).map((it) => {
+      const pr = Object.entries(it.jev.procedes || {}).sort((a, b) => b[1] - a[1]);
+      return { it, procOpts: shuffle([...pr.slice(0, 3), ...shuffle(pr.slice(3)).slice(0, 3)].map(([k]) => k)), answer: null, agree: null };
+    }) };
+  }
+  // Où vous situez-vous : strates position × signe du rapport à la croissance, tirées à tour de rôle
+  const growth = growthMap();
+  const strata = new Map();
+  for (const it of items) { const k = `${it.codes.position}|${Math.sign(growth[it.codes.vision])}`; if (!strata.has(k)) strata.set(k, []); strata.get(k).push(it); }
+  const lists = [...strata.values()].map((l) => pickSpread(l, l.length));
+  const out = [];
+  while (out.length < g.rounds && lists.some((l) => l.length)) for (const l of shuffle(lists)) if (l.length && out.length < g.rounds) out.push(l.shift());
+  return { key, i: 0, rounds: shuffle(out).map((it) => ({ it, r: undefined })) };
+}
+function replay(key) { S.play = newGame(key); S.scrollTo = "top"; S.focusTo = "[data-autofocus]"; render(); }
+function nextRound() { S.play.i++; S.scrollTo = { sel: ".game", block: "start" }; S.focusTo = "[data-autofocus]"; render(); }
+function answerQui(k) {
+  const round = S.play.rounds[S.play.i];
+  if (!round || round.pick !== null) return;
+  round.pick = k;
+  S.scrollTo = { sel: "#reveal", block: "nearest" }; S.focusTo = "#next-btn";
   render();
 }
-
-function renderQui(panel) {
+function answerAgent(ans) {
+  const round = S.play.rounds[S.play.i], it = round.it;
+  const top = (probs) => (Object.entries(probs || {}).sort((a, b) => b[1] - a[1])[0] || [])[0];
+  const jevProc = round.procOpts.filter((k) => (it.jev.procedes || {})[k] >= 0.5);
+  const a = new Set(ans.procedes), b = new Set(jevProc), union = new Set([...a, ...b]);
+  round.answer = ans;
+  round.agree = ((ans.position === top(it.jev.position)) + (ans.cadrage === top(it.jev.cadrage)) + (union.size ? [...a].filter((k) => b.has(k)).length / union.size : 1)) / 3;
+  S.scrollTo = { sel: "#reveal", block: "start" }; S.focusTo = "#next-btn";
+  render();
+}
+function reactSituer(v) {
+  const round = S.play.rounds[S.play.i];
+  if (!round) return;
+  round.r = v;
+  nextRound();
+}
+// Raccourcis clavier des jeux
+document.addEventListener("keydown", (e) => {
+  if (S.tab !== "jouer" || !S.play || e.ctrlKey || e.metaKey || e.altKey || !$("#popover").hidden) return;
+  if (e.target.closest && e.target.closest("input, select, textarea")) return;
   const P = S.play, round = P.rounds[P.i];
+  if (!round) return;
+  const onControl = e.target.closest && e.target.closest("button, a");
+  if (P.key === "qui") {
+    if (round.pick === null && /^[1-4]$/.test(e.key) && round.options[+e.key - 1]) { e.preventDefault(); answerQui(round.options[+e.key - 1]); }
+    else if (round.pick !== null && e.key === "Enter" && !onControl) { e.preventDefault(); nextRound(); }
+  } else if (P.key === "situer") {
+    const map = { 1: 1, 2: 0, 3: -1, 0: null };
+    if (Object.hasOwn(map, e.key)) { e.preventDefault(); reactSituer(map[e.key]); }
+  } else if (P.key === "agent" && round.answer && e.key === "Enter" && !onControl) { e.preventDefault(); nextRound(); }
+});
+
+const itemText = (it) => (LANG === "en" && it.t_en ? it.t_en : it.t);
+function quote(it) {
+  const translated = LANG === "en" && !!it.t_en;
+  const meta = [t(it.m === "claude" ? "quote_meta_claude" : "quote_meta_auto", { date: fmtDay(it.d) }), translated ? t("quote_translated") : null, LANG === "en" && !translated ? t("quote_fr_only") : null];
+  return [el("blockquote", { class: "quote", lang: translated ? "en" : "fr", text: itemText(it) }), el("p", { class: "quote-meta", text: meta.filter(Boolean).join(" ") })];
+}
+function originalLink(it) { const c = S.cand.get(it.c); return c && c.handle ? el("a", { href: `https://x.com/${c.handle}/status/${it.i}`, target: "_blank", rel: "noopener", text: t("see_original") }) : null; }
+function cluesFor(it) {
+  const ind = LANG === "en" ? it.ind_en : it.ind;
+  if (ind && ind.length) return ind.map((x) => el("li", { text: x }));
+  const c = it.codes || {}, li = [];
+  const one = (key, msg, fw) => { if (c[key] && !NULLISH.has(c[key])) li.push(el("li", {}, t(msg, { v: optLabel(key, c[key]) }), " ", infoBtn(fw))); };
+  const many = (key, msg, fw) => { if ((c[key] || []).length) li.push(el("li", {}, t(msg, { v: c[key].map((k) => optLabel(key, k).toLowerCase()).join(", ") }), " ", infoBtn(fw))); };
+  one("cadrage", "clue_frame", "cadrage");
+  one("vision", "clue_vision", "visions");
+  one("polarisation", "clue_square", "carre");
+  many("topoi", "clue_topoi", "topoi");
+  many("procedes", "clue_devices", "procedes");
+  many("retardement", "clue_delay", "retardement");
+  return li.length ? li : [el("li", { text: t("clue_none") })];
+}
+function hint(parts) {
+  return el("p", { class: "hint" }, t("shortcuts"), " ", parts.map(([keys, text], i) => [i ? " · " : "", keys.map((k, j) => [j ? " " : "", el("kbd", { text: k })]), " ", text]));
+}
+function scorePill(P) {
+  if (P.key === "qui") { const done = P.rounds.filter((r) => r.pick !== null); return el("span", { class: "score-pill", text: t("score_pill", { n: done.filter((r) => r.pick === r.it.c).length }) }); }
+  if (P.key === "agent") { const done = P.rounds.filter((r) => r.answer); return done.length ? el("span", { class: "score-pill", text: t("agree_pill", { v: pct(mean(done, (r) => r.agree), 0) }) }) : null; }
+  return null;
+}
+function roundClass(P, r) {
+  if (P.key === "qui") return r.pick === null ? "" : r.pick === r.it.c ? "ok" : "ko";
+  if (P.key === "agent") return r.answer ? "done" : "";
+  return r.r !== undefined ? "done" : "";
+}
+function gameTop(P) {
+  const n = P.rounds.length;
+  return el("div", { class: "game-top" },
+    el("button", { class: "ghost-btn", type: "button", onclick: () => go("jouer") }, icon("arrowL", 16), t("all_games")),
+    el("span", { class: "game-title", text: t("g_" + P.key) }),
+    el("div", { class: "dots", role: "img", "aria-label": P.i < n ? t("round_of", { i: P.i + 1, n }) : t("game_over") }, P.rounds.map((r, i) => el("i", { class: [roundClass(P, r), i === P.i ? "cur" : ""].join(" ").trim() || null }))),
+    scorePill(P));
+}
+const tier = (x) => (x >= 0.75 ? t("tier_high") : x >= 0.4 ? t("tier_mid") : t("tier_low"));
+async function shareResult(key, text) {
+  const url = location.origin + location.pathname + (LANG === "en" ? "?lang=en" : "") + `#jouer/${key}`;
+  if (navigator.share) {
+    try { await navigator.share({ title: t("doc_title"), text, url }); return; } catch (e) { if (e && e.name === "AbortError") return; }
+  }
+  try { await navigator.clipboard.writeText(`${text} ${url}`); toast(t("link_copied")); } catch (e) { toast(t("copy_failed")); }
+}
+function endButtons(key, share) {
+  // Enchaînement en boucle : qui, agent, situer
+  const i = GAME_KEYS.indexOf(key);
+  const next = [1, 2].map((d) => GAME_KEYS[(i + d) % GAME_KEYS.length]).find(gameAvailable);
+  return el("div", { class: "btn-row" },
+    el("button", { class: "primary-btn", type: "button", "data-autofocus": true, onclick: () => replay(key) }, icon("replay", 18), key === "situer" ? t("replay_other") : t("replay")),
+    next ? el("button", { class: "secondary-btn", type: "button", onclick: () => go("jouer", next) }, t("next_game", { name: t("g_" + next) })) : null,
+    el("button", { class: "ghost-btn", type: "button", onclick: () => shareResult(key, share) }, icon("share", 16), t("share")));
+}
+function endCard({ key, big, label, tierText, text, extra, share }) {
+  return el("section", { class: "card end" }, el("p", { class: "eyebrow", text: t("game_over") }),
+    big ? el("div", { class: "big", text: big }) : null, label ? el("p", { class: "end-label", text: label }) : null,
+    tierText ? el("div", { class: "tier", text: tierText }) : null, text ? el("p", { text }) : null, extra, endButtons(key, share));
+}
+function recapCard(items) {
+  return el("section", { class: "card" }, el("h3", { text: t("recap_title") }), el("ul", { class: "recap" }, items.map((x) =>
+    el("li", {}, avatar(x.c, 28), el("span", { class: "snip", title: x.text }, el("strong", { text: candName(x.c) }), " · ", x.text), el("span", { class: `res ${x.res || ""}`, text: x.label })))));
+}
+function theoriesCard(keys) {
+  return el("section", { class: "card" }, el("h3", { text: t("theories_met") }), el("p", { class: "sub", text: t("theories_sub") }),
+    el("div", { class: "chips spaced" }, keys.filter((k) => S.fw.has(k)).map((k) => el("span", { class: "chip" }, fwLabel(k), infoBtn(k)))),
+    el("div", { class: "btn-row" }, el("a", { class: "secondary-btn", href: "#discours" }, t("explore_discourse"), icon("arrowR", 16)), el("a", { class: "ghost-btn", href: "#apercu", text: t("explore_results") })));
+}
+
+function renderQui(box, P) {
+  const round = P.rounds[P.i];
   if (!round) {
-    const box = gameShell(panel, "Qui a tweeté ?", P.rounds.length, P.rounds.length);
-    box.append(el("div", { class: "reveal" }, el("h3", { text: `Score : ${P.score} sur ${P.rounds.length}` }),
-      el("p", { text: "Pour reconnaître un camp sans voir de nom, vous avez lu son discours : ses cadrages, sa manière d'opposer « nous » et « eux », ses arguments implicites. C'est exactement ce que décrit l'analyse critique du discours." }),
-      endLinks(), el("button", { class: "primary-btn", type: "button", text: "Rejouer", onclick: () => startGame("qui") })));
+    const n = P.rounds.length, score = P.rounds.filter((r) => r.pick === r.it.c).length;
+    box.append(gameTop(P), endCard({ key: "qui", big: `${score}/${n}`, label: t("qui_end_label"), tierText: tier(n ? score / n : 0), text: t("qui_end_p"), share: t("share_qui", { score, n }) }),
+      recapCard(P.rounds.map((r) => ({ c: r.it.c, text: itemText(r.it), res: r.pick === r.it.c ? "ok" : "ko", label: r.pick === r.it.c ? "✓" : "✕" }))),
+      theoriesCard(["carre", "cadrage", "topoi", "procedes", "visions", "retardement"]));
     return;
   }
-  const box = gameShell(panel, "Qui a tweeté ?", P.i, P.rounds.length, `score ${P.score}`);
-  box.append(...quote(round.it), el("p", { class: "q-title", text: "Qui a écrit ce tweet ?" }));
-  const choices = el("div", { class: "choices" }, round.options.map((k) => {
-    const c = S.cand.get(k);
-    const b = el("button", { class: "choice" + (P.answered ? (k === round.it.c ? " right" : k === P.answered ? " wrong" : "") : ""), type: "button", disabled: P.answered ? true : null },
-      avatar(k, 40), el("span", {}, c.name, el("span", { class: "sub2", text: c.party })));
-    b.addEventListener("click", () => { P.answered = k; if (k === round.it.c) P.score++; render(); });
-    return b;
-  }));
-  box.append(choices);
-  if (P.answered) {
-    const good = P.answered === round.it.c, c = S.cand.get(round.it.c);
-    box.append(el("div", { class: "reveal" },
-      el("div", { class: `verdict ${good ? "good" : "bad"}` }, el("span", { class: "ico", text: good ? "✓" : "✕" }), good ? "Bien vu." : `Non : c'était ${c.name}.`),
-      el("p", {}, `${c.name}, ${c.party}. `, originalLink(round.it)),
-      el("h3", { text: "Les indices dans le discours" }), el("ul", {}, cluesFor(round.it)),
-      el("button", { class: "primary-btn", type: "button", text: P.i + 1 < P.rounds.length ? "Tweet suivant" : "Voir mon score", onclick: () => { P.i++; P.answered = null; render(); } })));
-  }
+  const answered = round.pick !== null;
+  box.append(gameTop(P), ...quote(round.it), el("p", { class: "q-title", id: "q-title", text: t("qui_q") }),
+    el("div", { class: "choices", role: "group", "aria-labelledby": "q-title" }, round.options.map((k, idx) => {
+      const c = S.cand.get(k);
+      const cls = answered ? (k === round.it.c ? " right" : k === round.pick ? " wrong" : "") : "";
+      return el("button", { class: "choice" + cls, type: "button", disabled: answered ? true : null, "data-autofocus": !answered && idx === 0 ? true : null, onclick: () => answerQui(k) },
+        avatar(k, 44), el("span", {}, c.name, el("span", { class: "sub2", text: L(c, "party") })), el("span", { class: "k", "aria-hidden": "true", text: String(idx + 1) }));
+    })));
+  if (!answered) { box.append(hint([[["1", "2", "3", "4"], t("hint_answer")]])); return; }
+  const good = round.pick === round.it.c, c = S.cand.get(round.it.c);
+  box.append(el("div", { class: "reveal", id: "reveal" },
+    el("div", { class: `verdict ${good ? "good" : "bad"}`, role: "status" }, el("span", { class: "ico", "aria-hidden": "true", text: good ? "✓" : "✕" }), good ? t("qui_right") : t("qui_wrong", { name: c.name })),
+    el("p", {}, `${c.name}, ${L(c, "party")}. `, originalLink(round.it)),
+    el("h3", { text: t("clues_title") }), el("ul", {}, cluesFor(round.it)),
+    el("div", { class: "btn-row" }, el("button", { class: "primary-btn", id: "next-btn", type: "button", onclick: nextRound }, P.i + 1 < P.rounds.length ? t("next_tweet") : t("see_score"), icon("arrowR", 18))),
+    hint([[[t("key_enter")], t("hint_next")]])));
 }
 
 function compareBlock(title, fwKey, varKey, probs, mine, claude, keys) {
-  let entries = (keys || Object.keys(probs).filter((k) => !NULLISH.has(k))).map((k) => [k, probs[k] || 0]).sort((a, b) => b[1] - a[1]);
-  if (!keys) {
-    const top = entries.slice(0, 3);
-    const extra = [mine, Object.entries(probs).sort((a, b) => b[1] - a[1])[0][0]].filter((k) => k && !top.some(([x]) => x === k));
+  const sorted = Object.entries(probs || {}).sort((a, b) => b[1] - a[1]);
+  const jevPick = sorted.length ? sorted[0][0] : null;
+  let entries;
+  if (keys) entries = keys.map((k) => [k, probs[k] || 0]).sort((a, b) => b[1] - a[1]);
+  else {
+    const top = sorted.filter(([k]) => !NULLISH.has(k)).slice(0, 3);
+    const extra = [mine, jevPick].filter((k) => k && !top.some(([x]) => x === k));
     entries = [...top, ...[...new Set(extra)].map((k) => [k, probs[k] || 0])].sort((a, b) => b[1] - a[1]);
   }
-  const jevPick = Object.entries(probs).sort((a, b) => b[1] - a[1])[0][0];
+  const claudeText = claude === null || claude === undefined ? "" : Array.isArray(claude) ? (claude.length ? claude.map((k) => optLabel(varKey, k)).join(", ") : t("none_m")) : optLabel(varKey, claude);
   return el("div", { class: "q-block" }, el("div", { class: "q-title" }, title, infoBtn(fwKey)),
     el("div", { class: "cmp" }, entries.map(([k, p]) => {
       const isMine = Array.isArray(mine) ? mine.includes(k) : mine === k;
-      return [el("span", { class: "lbl" + (isMine ? " mine" : ""), text: optLabel(varKey, k) + (isMine ? " · vous" : "") }),
+      return [el("span", { class: "lbl" + (isMine ? " mine" : ""), text: optLabel(varKey, k) + (isMine ? ` · ${t("you_tag")}` : "") }),
         el("div", { class: "track" }, el("div", { class: "fill", style: `width:${p * 100}%` })), el("span", { class: "num", text: pct(p, 0) })];
     })),
-    el("p", { class: "note-small", text: `Barres : probabilités de Jev${keys ? "" : `, qui choisit « ${optLabel(varKey, jevPick)} »`}.${claude ? ` Claude : ${Array.isArray(claude) ? (claude.length ? claude.map((k) => optLabel(varKey, k)).join(", ") : "aucun") : optLabel(varKey, claude)}.` : ""}` }));
+    el("p", { class: "note-small", text: (keys || !jevPick ? t("cmp_jev") : t("cmp_jev_pick", { v: optLabel(varKey, jevPick) })) + (claudeText ? " " + t("cmp_claude", { v: claudeText }) : "") }));
 }
-function renderAgent(panel) {
-  const P = S.play, round = P.rounds[P.i];
+function renderAgent(box, P) {
+  const round = P.rounds[P.i];
   if (!round) {
-    const box = gameShell(panel, "Classez comme un agent", P.rounds.length, P.rounds.length);
-    const rate = P.total ? P.agree / P.total : 0;
-    box.append(el("div", { class: "reveal" }, el("h3", { text: `Accord avec Jev : ${pct(rate, 0)}` }),
-      el("p", {}, "Coder un discours, c'est trancher des cas ambigus. Deux codeurs, humains ou machines, ne sont jamais d'accord sur tout : c'est pourquoi on mesure leur accord, avec l'alpha de Krippendorff. ", infoBtn("fiabilite")),
-      el("p", {}, el("a", { href: "#methode", text: "Voir la fiabilité du codage de cette étude" })),
-      el("button", { class: "primary-btn", type: "button", text: "Rejouer", onclick: () => startGame("agent") })));
+    const done = P.rounds.filter((r) => r.answer);
+    const rate = mean(done, (r) => r.agree);
+    box.append(gameTop(P), endCard({ key: "agent", big: pct(rate, 0), label: t("agent_end_label"), tierText: tier(rate), text: t("agent_end_p"),
+      extra: el("p", {}, el("a", { href: "#methode/fiabilite", text: t("agent_end_link") })), share: t("share_agent", { v: pct(rate, 0) }) }),
+      recapCard(P.rounds.map((r) => ({ c: r.it.c, text: itemText(r.it), res: r.agree >= 0.5 ? "ok" : "ko", label: r.answer ? pct(r.agree, 0) : "–" }))),
+      theoriesCard(["cadrage", "procedes", "fiabilite"]));
     return;
   }
-  const box = gameShell(panel, "Classez comme un agent", P.i, P.rounds.length);
-  box.append(...quote(round.it));
   const it = round.it;
-  if (!P.answered) {
+  box.append(gameTop(P), ...quote(it));
+  if (!round.answer) {
     const form = el("form", {});
-    const radios = (name, title, fwKey, varKey, keys) => el("fieldset", {}, el("legend", { class: "q-title" }, title, infoBtn(fwKey)),
-      el("div", { class: "opts" }, keys.map((k) => el("label", { class: "opt", title: optFr(varKey, k) }, el("input", { type: "radio", name, value: k, required: true }), el("span", { text: optLabel(varKey, k) })))));
-    form.append(radios("position", "Quelle position ?", "cadrage", "position", ["favorable_transition", "neutre", "critique_ecologie"]),
-      radios("cadrage", "Quel cadrage dominant ?", "cadrage", "cadrage", V("cadrage").options.filter((o) => !NULLISH.has(o.key)).map((o) => o.key)),
-      el("fieldset", {}, el("legend", { class: "q-title" }, "Quels procédés repérez-vous ? Plusieurs réponses possibles.", infoBtn("procedes")),
-        el("div", { class: "opts" }, round.procOpts.map((k) => el("label", { class: "opt", title: optFr("procedes", k) }, el("input", { type: "checkbox", name: "procedes", value: k }), el("span", { text: optLabel("procedes", k) }))))),
-      el("button", { class: "primary-btn", type: "submit", text: "Comparer avec les agents" }));
-    form.addEventListener("submit", (e) => {
-      e.preventDefault();
-      const f = new FormData(form);
-      P.answered = { position: f.get("position"), cadrage: f.get("cadrage"), procedes: f.getAll("procedes") };
-      const jp = (v) => Object.entries(it.jev[v]).sort((a, b) => b[1] - a[1])[0][0];
-      const jevProc = round.procOpts.filter((k) => (it.jev.procedes || {})[k] >= 0.5);
-      const a = new Set(P.answered.procedes), b = new Set(jevProc), union = new Set([...a, ...b]);
-      P.agree += (P.answered.position === jp("position")) + (P.answered.cadrage === jp("cadrage")) + (union.size ? [...a].filter((k) => b.has(k)).length / union.size : 1);
-      P.total += 3;
-      render();
-    });
+    const group = (name, title, fwKey, varKey, keys, type, first) => el("fieldset", {}, el("legend", { class: "q-title" }, title, infoBtn(fwKey)),
+      el("div", { class: "opts" }, keys.map((k, i) => el("label", { class: "opt", title: optDef(varKey, k) || null },
+        el("input", { type, name, value: k, required: type === "radio" ? true : null, "data-autofocus": first && i === 0 ? true : null }), el("span", { text: optLabel(varKey, k) })))));
+    form.append(
+      group("position", t("agent_position_q"), "cadrage", "position", ["favorable_transition", "neutre", "critique_ecologie"], "radio", true),
+      group("cadrage", t("agent_frame_q"), "cadrage", "cadrage", V("cadrage").options.filter((o) => !NULLISH.has(o.key)).map((o) => o.key), "radio"),
+      round.procOpts.length ? group("procedes", t("agent_devices_q"), "procedes", "procedes", round.procOpts, "checkbox") : null,
+      el("div", { class: "btn-row" }, el("button", { class: "primary-btn", type: "submit" }, t("agent_compare"))));
+    form.addEventListener("submit", (e) => { e.preventDefault(); const f = new FormData(form); answerAgent({ position: f.get("position"), cadrage: f.get("cadrage"), procedes: f.getAll("procedes") }); });
     box.append(form);
-  } else {
-    const cl = it.claude || {};
-    box.append(el("div", { class: "reveal" }, el("h3", { text: "Vos réponses face aux agents" }),
-      compareBlock("Position", "cadrage", "position", it.jev.position, P.answered.position, cl.position),
-      compareBlock("Cadrage", "cadrage", "cadrage", it.jev.cadrage, P.answered.cadrage, cl.cadrage),
-      compareBlock("Procédés", "procedes", "procedes", it.jev.procedes || {}, P.answered.procedes, cl.procedes ? cl.procedes.filter((k) => round.procOpts.includes(k)) : null, round.procOpts),
-      el("p", {}, `Auteur : ${candName(it.c)}. `, originalLink(it)),
-      el("button", { class: "primary-btn", type: "button", text: P.i + 1 < P.rounds.length ? "Tweet suivant" : "Voir le bilan", onclick: () => { P.i++; P.answered = null; render(); } })));
+    return;
   }
+  const cl = it.claude || {};
+  box.append(el("div", { class: "reveal", id: "reveal" },
+    el("h3", { text: t("agent_vs") }), el("p", { class: "sub", text: t("agent_round_agree", { v: pct(round.agree, 0) }) }),
+    compareBlock(t("cmp_position"), "cadrage", "position", it.jev.position, round.answer.position, cl.position),
+    compareBlock(t("cmp_frame"), "cadrage", "cadrage", it.jev.cadrage, round.answer.cadrage, cl.cadrage),
+    round.procOpts.length ? compareBlock(t("cmp_devices"), "procedes", "procedes", it.jev.procedes || {}, round.answer.procedes, cl.procedes ? cl.procedes.filter((k) => round.procOpts.includes(k)) : null, round.procOpts) : null,
+    el("p", {}, t("author_is", { name: candName(it.c) }), " ", originalLink(it)),
+    el("div", { class: "btn-row" }, el("button", { class: "primary-btn", id: "next-btn", type: "button", onclick: nextRound }, P.i + 1 < P.rounds.length ? t("next_tweet") : t("see_summary"), icon("arrowR", 18))),
+    hint([[[t("key_enter")], t("hint_next")]])));
 }
 
-function profiles() {
-  const visions = V("vision").options.filter((o) => !NULLISH.has(o.key)).map((o) => o.key);
-  const cadrages = V("cadrage").options.filter((o) => !NULLISH.has(o.key)).map((o) => o.key);
-  const pv = { favorable_transition: 1, critique_ecologie: -1 };
-  const rows = byCandidate(S.tweets).filter((s) => s.eco >= 8).map((s) => {
-    const eco = s.tweets.filter((t) => t.e);
-    return { key: s.key, pos: eco.reduce((a, t) => a + (pv[t.position] || 0), 0) / eco.length,
-      vis: visions.map((k) => eco.filter((t) => t.vision === k).length / eco.length), cad: cadrages.map((k) => eco.filter((t) => t.cadrage === k).length / eco.length) };
-  });
-  const mean = (arrs) => arrs[0].map((_, i) => arrs.reduce((a, x) => a + x[i], 0) / arrs.length);
-  if (rows.length) { const mv = mean(rows.map((r) => r.vis)), mc = mean(rows.map((r) => r.cad)); rows.forEach((r) => { r.vec = [2 * r.pos, ...r.vis.map((x, i) => x - mv[i]), ...r.cad.map((x, i) => x - mc[i])]; }); }
-  return { rows, visions, cadrages, pv };
+const REACTIONS = [[1, "up", "r_agree"], [0, "mixed", "r_mixed"], [-1, "down", "r_disagree"]];
+const reactionText = (r) => (r === null || r === undefined ? t("r_skipped") : t(REACTIONS.find(([v]) => v === r)[2]));
+function visionDef(key) {
+  let def = optDef("vision", key) || (opt("vision", key) || {}).en || "";
+  if (LANG === "en") def = def.replace(/^[^:]{2,40}:\s*/, "");
+  return def.charAt(0).toLowerCase() + def.slice(1);
 }
-function renderSituer(panel) {
-  const P = S.play, round = P.rounds[P.i];
+function renderSituer(box, P) {
+  const round = P.rounds[P.i];
   if (round) {
-    const box = gameShell(panel, "Où vous situez-vous ?", P.i, P.rounds.length);
-    box.append(...quote(round.it), el("p", { class: "q-title", text: "Êtes-vous d'accord avec ce tweet ?" }),
-      el("div", { class: "react" }, [[1, "D'accord"], [0, "Partagé"], [-1, "Pas d'accord"], [null, "Je passe"]].map(([v, l]) =>
-        el("button", { class: v === null ? "ghost-btn" : "choice", type: "button", text: l, onclick: () => { round.r = v; P.i++; render(); } }))));
+    box.append(gameTop(P), ...quote(round.it), el("p", { class: "q-title", id: "q-title", text: t("situer_q") }),
+      el("div", { class: "react", role: "group", "aria-labelledby": "q-title" }, REACTIONS.map(([v, ic, k], i) =>
+        el("button", { class: "choice", type: "button", "data-autofocus": i === 0 ? true : null, onclick: () => reactSituer(v) }, icon(ic, 22), t(k), el("span", { class: "k", "aria-hidden": "true", text: String(i + 1) })))),
+      el("div", { class: "skip-row" }, el("button", { class: "ghost-btn", type: "button", onclick: () => reactSituer(null) }, t("r_skip"))),
+      hint([[["1", "2", "3"], t("hint_react")], [["0"], t("hint_skip")]]));
     return;
   }
-  const box = gameShell(panel, "Où vous situez-vous ?", P.rounds.length, P.rounds.length);
-  const rated = P.rounds.filter((r) => r.r !== null);
-  const { rows, visions, cadrages, pv } = profiles();
-  if (rated.length < 4 || !rows.length) {
-    box.append(el("div", { class: "reveal" }, el("p", { text: rows.length ? "Réagissez à au moins quatre tweets pour obtenir un résultat." : "Pas encore assez de tweets pour établir les profils des candidats." }),
-      el("button", { class: "primary-btn", type: "button", text: "Recommencer", onclick: () => startGame("situer") })));
+  const growth = growthMap();
+  const rated = P.rounds.filter((r) => r.r !== null && r.r !== undefined);
+  const { rows } = compassRows(S.tweets);
+  box.append(gameTop(P));
+  if (rated.length < 4 || rows.length < 2) {
+    box.append(el("section", { class: "card end" }, el("p", { text: rows.length < 2 ? t("situer_no_profiles") : t("situer_few") }),
+      el("div", { class: "btn-row" }, el("button", { class: "primary-btn", type: "button", "data-autofocus": true, onclick: () => replay("situer") }, icon("replay", 18), t("restart")))));
     return;
   }
-  const n = rated.length;
-  const u = [2 * rated.reduce((a, r) => a + r.r * (pv[r.it.codes.position] || 0), 0) / n,
-    ...visions.map((k) => rated.reduce((a, r) => a + (r.it.codes.vision === k ? r.r : 0), 0) / n),
-    ...cadrages.map((k) => rated.reduce((a, r) => a + (r.it.codes.cadrage === k ? r.r : 0), 0) / n)];
-  const ranked = rows.map((r) => ({ key: r.key, sim: cosine(u, r.vec) })).sort((a, b) => b.sim - a.sim);
-  const uv = u.slice(1, 1 + visions.length), best = uv.indexOf(Math.max(...uv));
-  const row = (x) => el("div", { class: "result-row" }, avatar(x.key, 40), el("span", {}, el("strong", { text: candName(x.key) }), el("span", { class: "sub2", text: ` ${S.cand.get(x.key).party}` })),
-    el("div", {}, el("div", { class: "track", title: `Proximité : ${F2.format(x.sim)}` }, el("div", { class: "fill", style: `width:${((x.sim + 1) / 2) * 100}%` })),
-      el("span", { class: "sub2", text: `proximité ${F2.format(x.sim)}` })));
-  box.append(el("div", { class: "reveal" },
-    el("h3", { text: "Les candidats dont le discours vous ressemble le plus" }), el("div", { class: "result-list" }, ranked.slice(0, 3).map(row)),
-    el("h3", { text: "Le plus éloigné" }), el("div", { class: "result-list" }, row(ranked[ranked.length - 1])),
-    uv[best] > 0 ? el("p", {}, "Votre vision de l'écologie ressemble à celle que Dryzek appelle ", el("strong", { text: optLabel("vision", visions[best]).toLowerCase() }), ` : ${optFr("vision", visions[best]).replace(/^./, (c) => c.toLowerCase())} `, infoBtn("visions")) : null,
-    el("h3", { text: "Les auteurs des tweets" }),
-    el("div", { class: "table-view" }, el("table", { class: "small-table" }, el("tbody", {}, P.rounds.map((r) => el("tr", {},
-      el("td", { text: r.it.t.slice(0, 90) + (r.it.t.length > 90 ? "…" : "") }), el("td", {}, el("span", { class: "who-inline" }, avatar(r.it.c, 20), candName(r.it.c))),
-      el("td", { text: r.r === 1 ? "D'accord" : r.r === 0 ? "Partagé" : r.r === -1 ? "Pas d'accord" : "Passé" })))))),
-    el("p", { class: "disclaimer", text: "Jeu pédagogique : il compare vos réactions à douze tweets avec le discours tenu sur X par chaque candidat, sur la position, la vision de l'écologie et le cadrage. Ce n'est ni un sondage ni un conseil de vote. Rien n'est enregistré : tout se passe dans votre navigateur." }),
-    endLinks(), el("button", { class: "primary-btn", type: "button", text: "Rejouer avec d'autres tweets", onclick: () => startGame("situer") })));
+  const you = { x: mean(rated, (r) => r.r * STANCE[r.it.codes.position]), y: mean(rated, (r) => r.r * growth[r.it.codes.vision]) };
+  const ranked = rows.map((r) => ({ ...r, d: Math.hypot(r.x - you.x, r.y - you.y) })).sort((a, b) => a.d - b.d);
+  const near = ranked.slice(0, 3), far = ranked[ranked.length - 1];
+  const visions = V("vision").options.map((o) => o.key).filter((k) => k in growth);
+  const uv = visions.map((k) => rated.reduce((a, r) => a + (r.it.codes.vision === k ? r.r : 0), 0));
+  const best = uv.indexOf(Math.max(...uv));
+  const nearItem = (r) => el("div", { class: "near-item" }, avatar(r.key, 40),
+    el("span", {}, el("strong", { text: candName(r.key) }), el("small", { text: `${candParty(r.key)} · ${t("distance", { d: f2(r.d) })}` })));
+  const wrap = compassFrame();
+  const result = el("section", { class: "card", id: "situer-result" },
+    el("header", { class: "card-head" }, el("div", {}, titleWithInfo("h2", t("situer_title_res"), "boussole"), el("p", { class: "sub", text: t("situer_end_p") })), tableToggle("situer")),
+    el("div", { class: "compass-layout" }, wrap, el("div", { class: "compass-side" },
+      el("h3", { text: t("situer_near") }), el("div", { class: "near-list" }, near.map(nearItem)),
+      far && !near.includes(far) ? [el("h3", { class: "block-sub", text: t("situer_far") }), el("div", { class: "near-list" }, nearItem(far))] : null,
+      uv[best] > 0 ? el("p", {}, t("situer_vision_pre"), " ", el("strong", { text: optLabel("vision", visions[best]).toLowerCase() }), t("colon"), visionDef(visions[best]), " ", infoBtn("visions")) : null)),
+    el("div", { class: "table-view", id: "situer-table", hidden: !S.openTables.has("situer") }));
+  box.append(result, el("section", { class: "card end" }, el("p", { class: "eyebrow", text: t("game_over") }), el("p", { class: "disclaimer", text: t("situer_disclaimer") }), endButtons("situer", t("share_situer"))),
+    recapCard(P.rounds.map((r) => ({ c: r.it.c, text: itemText(r.it), res: "", label: reactionText(r.r) }))),
+    theoriesCard(["boussole", "visions", "cadrage"]));
+  drawCompass(wrap, rows, { you, near: new Set(near.map((r) => r.key)) });
+  compassTable("situer", rows);
 }
 
-async function renderJouer(panel) {
-  panel.replaceChildren(el("p", { class: "empty", text: "Chargement des jeux…" }));
-  await loadGames();
-  if (S.tab !== "jouer") return;
-  if (S.play) { ({ qui: renderQui, agent: renderAgent, situer: renderSituer })[S.play.key](panel); return; }
-  const n = S.games.items.length;
-  panel.replaceChildren(el("div", { class: "section-intro" }, el("h2", { text: "Jouer avec le discours" }),
-    el("p", { text: "Trois jeux pour s'exercer à lire un discours politique comme le font les chercheurs. Les tweets sont anonymisés : noms, partis et hashtags trop reconnaissables sont retirés. Rien n'est enregistré." })),
-    el("div", { class: "game-cards" }, GAMES.map((g) => el("div", { class: "game-card" }, el("h3", { text: g.title }), el("p", { text: g.text }),
-      el("button", { class: "primary-btn", type: "button", text: "Jouer", disabled: n < 4 ? true : null, onclick: () => startGame(g.key) })))),
-    n < 4 ? el("p", { class: "note-small", text: "Les jeux ouvriront dès que la collecte aura réuni assez de tweets écologie." }) : null);
+function gameArt(key) {
+  if (key === "qui") {
+    const order = (S.data.study.blocs || []).map((b) => b.key);
+    const faces = [];
+    for (const b of order) { const c = S.cands.find((x) => x.enabled && x.bloc === b && x.photo && !faces.includes(x)); if (c && faces.length < 3) faces.push(c); }
+    return el("div", { class: "stack" }, faces.map((c) => avatar(c.key, 56)), el("span", { class: "avatar art-q", style: "width:56px;height:56px;font-size:24px", text: "?" }));
+  }
+  if (key === "agent") return el("div", { class: "art-bars" }, el("span", { style: "width:86%" }), el("span", { style: "width:58%" }), el("span", { style: "width:34%" }));
+  return el("div", { class: "art-compass" }, [[16, 22], [66, 16], [74, 62], [30, 66], [50, 36]].map(([x, y]) => el("i", { style: `left:${x}%;top:${y}%` })), el("i", { class: "me", style: "left:56%;top:52%" }));
+}
+function renderJouer(panel) {
+  panel.replaceChildren();
+  if (S.play) {
+    const box = el("div", { class: "game" });
+    panel.append(box);
+    ({ qui: renderQui, agent: renderAgent, situer: renderSituer })[S.play.key](box, S.play);
+    return;
+  }
+  const cards = GAME_KEYS.map((k) => {
+    const ok = gameAvailable(k), g = GAMES[k];
+    return el("article", { class: "game-card" + (ok ? "" : " off") },
+      el("div", { class: "game-art", "aria-hidden": "true" }, gameArt(k)),
+      el("div", { class: "game-body" },
+        el("h3", { text: t("g_" + k) }), el("p", { text: t(`g_${k}_text`) }),
+        el("div", { class: "game-meta" }, el("span", { class: "badge", text: tn("n_rounds", g.rounds) }), el("span", { class: "badge", text: t("minutes", { n: g.minutes }) }), el("span", { class: "badge", text: t(`g_${k}_level`) })),
+        el("button", { class: "primary-btn", type: "button", disabled: ok ? null : true, onclick: () => go("jouer", k) }, icon("play", 18), t("play_btn")),
+        ok ? null : el("p", { class: "note-small", text: t("game_unavailable") })));
+  });
+  const nFw = DISCOURS_ORDER.filter((k) => S.fw.has(k)).length;
+  panel.append(
+    sectionIntro(t("play_title"), t("play_intro")),
+    el("div", { class: "game-cards" }, cards),
+    el("div", { class: "steps-row" }, [1, 2, 3].map((i) => el("div", { class: "step" }, el("span", { class: "n", text: String(i) }), el("div", {}, el("h3", { text: t(`step${i}_t`) }), el("p", { text: t(`step${i}_p`) }))))),
+    el("section", { class: "learn" }, el("h3", { text: t("learn_title") }),
+      el("div", { class: "chips" }, ["carre", "cadrage", "topoi", "procedes", "retardement", "visions", "boussole"].filter((k) => S.fw.has(k)).map((k) => el("span", { class: "chip" }, fwLabel(k), infoBtn(k))))),
+    el("section", { class: "card teaser" }, el("h2", { text: t("teaser_title") }), el("p", { class: "sub", text: t("teaser_text") }),
+      el("div", { class: "btn-row" },
+        el("a", { class: "secondary-btn", href: "#apercu" }, icon("chart", 16), t("teaser_apercu")),
+        el("a", { class: "secondary-btn", href: "#discours" }, icon("talk", 16), t("teaser_discours", { n: nFw })),
+        el("a", { class: "secondary-btn", href: "#methode" }, icon("book", 16), t("teaser_methode")))));
+}
+
+/* =================================================================== en-tête, navigation, pied de page */
+const TABS = [["jouer", "play"], ["apercu", "chart"], ["discours", "talk"], ["mots", "words"], ["tweets", "list"], ["methode", "book"]];
+const isDark = () => getComputedStyle(document.documentElement).colorScheme.includes("dark");
+function themeButton() {
+  const b = el("button", { class: "icon-btn", type: "button", "aria-label": t("theme_toggle"), title: t("theme_toggle") }, icon(isDark() ? "sun" : "moon"));
+  b.addEventListener("click", () => {
+    const next = isDark() ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem("theme", next); } catch (e) { /* stockage indisponible */ }
+    b.replaceChildren(icon(isDark() ? "sun" : "moon"));
+  });
+  return b;
+}
+function langSwitch() {
+  return el("div", { class: "lang", role: "group", "aria-label": t("lang_aria") }, LANGS.map((l) =>
+    el("button", { type: "button", lang: l, "aria-pressed": String(l === LANG), title: l === "fr" ? "Français" : "English", text: l.toUpperCase(), onclick: () => setLang(l, true) })));
+}
+function heroFaces() {
+  const order = (S.data.study.blocs || []).map((b) => b.key);
+  const list = S.cands.filter((c) => c.enabled).sort((a, b) => order.indexOf(a.bloc) - order.indexOf(b.bloc) || byName(a, b));
+  return el("div", { class: "faces hero-extra", role: "group", "aria-label": t("faces_aria") }, list.map((c) => {
+    const b = el("button", { class: "face", type: "button", title: c.name, "aria-label": t("face_label", { name: c.name }), onclick: () => focusCandidate(c.key) });
+    if (c.photo && c.photo.url) {
+      const img = el("img", { src: c.photo.url, alt: "", decoding: "async", referrerpolicy: "no-referrer" });
+      img.addEventListener("error", () => b.replaceChildren(el("span", { class: "ini", text: initials(c.name) })));
+      b.append(img);
+    } else b.append(el("span", { class: "ini", text: initials(c.name) }));
+    return b;
+  }));
+}
+function renderTop() {
+  const d = S.data;
+  $("#top").replaceChildren(
+    el("div", { class: "wrap topbar" },
+      el("a", { class: "brand", href: "#jouer" }, logo(), el("span", { text: t("brand") })),
+      el("div", { class: "top-actions" }, langSwitch(), themeButton())),
+    el("div", { class: "wrap hero" },
+      el("div", { class: "hero-text" },
+        el("p", { class: "eyebrow", text: t("hero_eyebrow") }),
+        el("h1", { text: t("hero_title") }),
+        el("p", { class: "lede hero-extra", text: t("hero_lede") }),
+        el("div", { class: "cta hero-extra" },
+          el("button", { class: "primary-btn", type: "button", onclick: () => go("jouer", "qui") }, icon("play", 20), t("hero_cta_play")),
+          el("a", { class: "secondary-btn", href: "#apercu" }, t("hero_cta_explore"), icon("arrowR", 18))),
+        d ? el("p", { class: "meta" },
+          el("span", {}, rich(tn("meta_tweets", S.tweets.length))),
+          el("span", {}, rich(tn("meta_cands", S.cands.filter((c) => c.enabled).length))),
+          el("span", {}, rich(t("meta_updated", { date: fmtDay(d.generated_at.slice(0, 10)) })))) : null),
+      d ? heroFaces() : null));
+}
+function renderTabs() {
+  const nav = $("#tabs");
+  nav.setAttribute("aria-label", t("tabs_aria"));
+  nav.replaceChildren(...TABS.map(([k, ic]) => el("a", { href: `#${k}`, "data-tab": k, class: k === "jouer" ? "play" : null }, icon(ic, 17), el("span", { text: t("tab_" + k) }))));
+  updateTabs();
+}
+function updateTabs() {
+  for (const a of $$("#tabs a")) { if (a.dataset.tab === S.tab) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); }
+}
+function renderFilters() {
+  const box = $("#filters");
+  box.hidden = !S.data || S.tab === "jouer" || S.tab === "methode";
+  if (box.hidden) return;
+  const active = box.contains(document.activeElement) ? document.activeElement.id : "";
+  const period = el("select", { id: "f-period" }, S.periods.map((p) => option(p.key, p.label, p.key === S.period)));
+  const bloc = el("select", { id: "f-bloc" }, option("", t("all_families"), !S.bloc), (S.data.study.blocs || []).map((b) => option(b.key, L(b, "label"), b.key === S.bloc)));
+  const focus = el("select", { id: "f-focus" }, option("", t("nobody"), !S.focus), [...S.cands].sort(byName).map((c) => option(c.key, c.name, c.key === S.focus)));
+  const on = () => setFilter({ period: period.value, bloc: bloc.value, focus: focus.value });
+  [period, bloc, focus].forEach((s) => s.addEventListener("change", on));
+  const summary = [currentPeriod().short, S.bloc ? blocLabel(S.bloc) : t("all_families_short"), S.focus ? candName(S.focus) : null].filter(Boolean).join(" · ");
+  const toggle = el("button", { class: "filters-toggle", id: "filters-toggle", type: "button", "aria-expanded": String(S.filtersOpen), "aria-controls": "filters-inner" },
+    el("span", {}, rich(t("filters_summary", { s: summary }))), el("span", { "aria-hidden": "true", text: S.filtersOpen ? "▴" : "▾" }));
+  toggle.addEventListener("click", () => { S.filtersOpen = !S.filtersOpen; renderFilters(); });
+  box.classList.toggle("open", S.filtersOpen);
+  box.replaceChildren(toggle, el("div", { class: "wrap filters-inner", id: "filters-inner" },
+    el("label", { class: "field" }, el("span", { text: t("f_period") }), period),
+    el("label", { class: "field" }, el("span", { text: t("f_bloc") }), bloc),
+    el("label", { class: "field" }, el("span", { text: t("f_focus") }), focus),
+    S.period !== "all" || S.bloc || S.focus ? el("button", { class: "reset-link", id: "f-reset", type: "button", text: t("reset"), onclick: () => setFilter({ period: "all", bloc: "", focus: "" }) }) : null));
+  if (active) { const n = document.getElementById(active); if (n) n.focus({ preventScroll: true }); }
+}
+function renderFooter() {
+  const d = S.data;
+  $("#footer").replaceChildren(el("div", { class: "wrap footer-inner" },
+    el("div", {},
+      el("p", {}, el("strong", { text: t("brand") }), " · ", t("footer_about")),
+      el("p", { text: t("footer_privacy") }),
+      d ? el("p", { text: t("footer_updated", { date: fmtDay(d.generated_at.slice(0, 10)) }) }) : null),
+    el("div", { class: "links" },
+      el("a", { href: "#methode", text: t("tab_methode") }),
+      el("a", { href: REPO_URL, target: "_blank", rel: "noopener", text: t("source_code") }),
+      el("a", { href: "#top", text: t("footer_top"), onclick: (e) => { e.preventDefault(); scrollTo({ top: 0, behavior: smooth() }); } }))));
+}
+function showNotice(text) {
+  const n = $("#notice");
+  n.hidden = !text;
+  n.replaceChildren(...(text ? [icon("info", 18), el("p", { text })] : []));
+}
+function toast(text) {
+  const n = $("#toast");
+  n.textContent = text; n.hidden = false;
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => { n.hidden = true; }, 2600);
 }
 
 /* =================================================================== navigation */
-const TABS = ["apercu", "discours", "mots", "tweets", "jouer", "methode"];
-function go(tab, sub) { location.hash = sub ? `${tab}/${sub}` : tab; }
-function readHash() {
-  const [tab, sub] = location.hash.replace(/^#/, "").split("/");
-  S.tab = TABS.includes(tab) ? tab : "apercu";
-  if (S.tab === "discours" && sub && S.fw.has(sub)) { if (S.discours !== sub) S.selectedCell = null; S.discours = sub; }
-}
-function setFilter(changes) {
-  Object.assign(S, changes);
-  S.x.shown = 15;
+function syncUrl() {
   const q = new URLSearchParams();
+  if (S.langInUrl) q.set("lang", LANG);
   if (S.period !== "all") q.set("periode", S.period);
   if (S.bloc) q.set("bloc", S.bloc);
   if (S.focus) q.set("candidat", S.focus);
-  history.replaceState(null, "", (q.toString() ? "?" + q : location.pathname) + location.hash);
-  $("#f-period").value = S.period; $("#f-bloc").value = S.bloc; $("#f-focus").value = S.focus;
+  const s = q.toString();
+  history.replaceState(null, "", (s ? "?" + s : location.pathname) + location.hash);
+}
+// anchor : sélecteur d'un bloc à garder à la même hauteur d'écran pendant le nouveau rendu
+function setFilter(changes, anchor) {
+  const node = anchor && $(anchor);
+  const before = node ? node.getBoundingClientRect().top : null;
+  if (changes.focus && changes.focus !== S.focus && !anchor && !S.scrollTo && S.tab === "apercu") S.scrollTo = { sel: "#profile", block: "start" };
+  Object.assign(S, changes);
+  S.x.shown = 15;
+  syncUrl();
+  render();
+  const after = anchor && $(anchor);
+  if (after && before !== null) scrollBy(0, after.getBoundingClientRect().top - before);
+}
+function focusCandidate(key) {
+  S.focus = key;
+  syncUrl();
+  S.scrollTo = { sel: "#profile", block: "start" };
+  if (S.tab === "apercu") render(); else go("apercu");
+}
+function go(tab, sub) {
+  const h = "#" + (sub ? `${tab}/${sub}` : tab);
+  if (location.hash === h) onHash(); else location.hash = h;
+}
+function readHash() {
+  const [tab, sub = ""] = location.hash.replace(/^#/, "").split("/");
+  S.tab = TABS.some(([k]) => k === tab) ? tab : "jouer";
+  if (S.tab === "discours" && DISCOURS_ORDER.includes(sub) && S.fw.has(sub)) { if (S.discours !== sub) S.selectedCell = null; S.discours = sub; }
+  if (S.tab === "jouer" && GAME_KEYS.includes(sub)) { if (!S.play || S.play.key !== sub) { S.play = newGame(sub); S.focusTo = "[data-autofocus]"; } }
+  else S.play = null;
+  return sub;
+}
+function onHash() {
+  const prev = { tab: S.tab, disc: S.discours, play: S.play };
+  const sub = readHash();
+  if (S.tab === "methode" && METHODE_SECTIONS.includes(sub)) S.scrollTo = { sel: "#m-" + sub, block: "start" };
+  else if (!S.scrollTo && (prev.tab !== S.tab || (S.tab === "discours" && prev.disc !== S.discours) || (S.tab === "jouer" && prev.play !== S.play))) S.scrollTo = "top";
   render();
 }
-function setupFilters() {
-  const params = new URLSearchParams(location.search);
-  S.period = S.periods.some((p) => p.key === params.get("periode")) ? params.get("periode") : "all";
-  S.bloc = params.get("bloc") || "";
-  S.focus = S.cand.has(params.get("candidat")) ? params.get("candidat") : "";
-  $("#f-period").replaceChildren(...S.periods.map((p) => option(p.key, p.label, p.key === S.period)));
-  $("#f-bloc").replaceChildren(option("", "Toutes", !S.bloc), ...(S.data.study.blocs || []).map((b) => option(b.key, b.label, b.key === S.bloc)));
-  $("#f-focus").replaceChildren(option("", "Personne", !S.focus), ...[...S.cands].sort((a, b) => a.name.localeCompare(b.name, "fr")).map((c) => option(c.key, c.name, c.key === S.focus)));
-  const on = () => setFilter({ period: $("#f-period").value, bloc: $("#f-bloc").value, focus: $("#f-focus").value });
-  ["#f-period", "#f-bloc", "#f-focus"].forEach((s) => $(s).addEventListener("change", on));
-}
+const RENDER = { jouer: renderJouer, apercu: renderApercu, discours: renderDiscours, mots: renderMots, tweets: renderTweets, methode: renderMethode };
 function render() {
+  if (!S.data) return;
   hideTip(); closePopover();
-  $$(".main-tabs a").forEach((a) => a.setAttribute("aria-current", a.dataset.tab === S.tab ? "page" : "false"));
-  $("#filters").hidden = S.tab === "jouer" || S.tab === "methode";
+  document.body.dataset.tab = S.tab;
+  document.body.dataset.hero = S.tab === "jouer" && !S.play ? "full" : "compact";
+  updateTabs();
+  renderFilters();
   for (const p of $$("[data-panel]")) p.hidden = p.dataset.panel !== S.tab;
-  const panel = $(`[data-panel="${S.tab}"]`);
-  ({ apercu: renderApercu, discours: renderDiscours, mots: renderMots, tweets: renderTweets, jouer: renderJouer, methode: renderMethode })[S.tab](panel);
+  document.documentElement.style.scrollPaddingTop = $("#sticky").offsetHeight + 16 + "px";
+  RENDER[S.tab]($(`[data-panel="${S.tab}"]`));
+  const target = S.scrollTo, focus = S.focusTo;
+  S.scrollTo = null; S.focusTo = null;
+  if (target === "top") scrollTo({ top: 0 });
+  else if (target) { const n = $(target.sel); if (n) n.scrollIntoView({ block: target.block || "start", behavior: smooth() }); }
+  if (focus) { const n = $(focus, $(`[data-panel="${S.tab}"]`)) || $(focus); if (n) n.focus({ preventScroll: true }); }
 }
 
+/* =================================================================== langue : bascule */
+function detectLang() {
+  const q = new URLSearchParams(location.search).get("lang");
+  if (LANGS.includes(q)) { S.langInUrl = true; return q; }
+  try { const s = localStorage.getItem("lang"); if (LANGS.includes(s)) return s; } catch (e) { /* stockage indisponible */ }
+  return /^fr\b/i.test(navigator.language || "") ? "fr" : "en";
+}
+function applyLang() {
+  document.documentElement.lang = LANG;
+  document.title = t("doc_title");
+  const skip = $(".skip");
+  if (skip) skip.textContent = t("skip");
+  setupFormats();
+}
+function setLang(lang, byUser) {
+  if (!LANGS.includes(lang)) return;
+  LANG = lang;
+  if (byUser) { S.langInUrl = true; try { localStorage.setItem("lang", lang); } catch (e) { /* stockage indisponible */ } }
+  applyLang();
+  if (S.data) buildPeriods();
+  syncUrl();
+  renderTop(); renderTabs(); renderFooter();
+  if (byUser) { const b = $(`.lang button[lang="${lang}"]`); if (b) b.focus({ preventScroll: true }); }
+  if (S.data) { showNotice(S.tweets.length ? "" : t("notice_empty")); render(); }
+}
+
+/* =================================================================== démarrage */
+async function fetchJson(url) {
+  const r = await fetch(url, { cache: "no-cache" });
+  if (!r.ok) throw new Error(`${url} : ${r.status}`);
+  return r.json();
+}
 async function main() {
-  $("#theme-toggle").addEventListener("click", () => {
-    const next = getComputedStyle(document.documentElement).colorScheme.includes("dark") ? "light" : "dark";
-    document.documentElement.dataset.theme = next;
-    try { localStorage.setItem("theme", next); } catch (e) { /* stockage indisponible */ }
-  });
-  let data;
-  try { const r = await fetch("data.json", { cache: "no-cache" }); if (!r.ok) throw new Error(r.status); data = await r.json(); }
-  catch (e) { const b = $("#banner"); b.hidden = false; b.textContent = "Les données n'ont pas pu être chargées. Réessayez dans quelques minutes."; return; }
-  decode(data);
-  $("#updated").textContent = fmtDay(data.generated_at.slice(0, 10));
-  $("#updated").setAttribute("datetime", data.generated_at);
-  if (!S.tweets.length) { const b = $("#banner"); b.hidden = false; b.textContent = "La première collecte n'a pas encore eu lieu : les graphiques se rempliront après le premier passage quotidien."; }
-  setupFilters();
-  readHash();
-  addEventListener("hashchange", () => { const prev = S.tab; readHash(); if (prev !== S.tab && S.tab !== "jouer") S.play = null; render(); if (prev !== S.tab) scrollTo({ top: 0 }); });
+  LANG = detectLang();
+  applyLang();
+  renderTop(); renderTabs(); renderFooter();
+  const loading = $(".loading");
+  if (loading) loading.textContent = t("loading");
+  const [data, games] = await Promise.allSettled([fetchJson("data.json"), fetchJson("games.json")]);
+  if (data.status !== "fulfilled") {
+    showNotice(t("notice_load_error"));
+    $$("[data-panel]").forEach((p) => p.replaceChildren());
+    return;
+  }
+  decode(data.value);
+  S.games = { items: ((games.status === "fulfilled" && games.value.items) || []).filter((it) => S.cand.has(it.c) && it.t && it.codes) };
+  buildPeriods();
+  const params = new URLSearchParams(location.search);
+  S.period = S.periods.some((p) => p.key === params.get("periode")) ? params.get("periode") : "all";
+  S.bloc = (S.data.study.blocs || []).some((b) => b.key === params.get("bloc")) ? params.get("bloc") : "";
+  S.focus = S.cand.has(params.get("candidat")) ? params.get("candidat") : "";
+  if (!S.tweets.length) showNotice(t("notice_empty"));
+  renderTop(); renderFooter();
+  if (S.focus && location.hash.startsWith("#apercu")) S.scrollTo = { sel: "#profile", block: "start" };
+  addEventListener("hashchange", onHash);
   let lastW = innerWidth;
-  addEventListener("resize", debounce(() => { if (innerWidth !== lastW && S.tab === "apercu") { lastW = innerWidth; render(); } }, 200));
-  render();
+  addEventListener("resize", debounce(() => {
+    if (innerWidth === lastW) return;
+    lastW = innerWidth;
+    // Les graphiques dépendent de la largeur ; on évite de redessiner un jeu en cours (formulaire)
+    if (S.tab !== "jouer" || (S.play && S.play.key === "situer" && !S.play.rounds[S.play.i])) render();
+  }, 200));
+  onHash();
 }
 main();

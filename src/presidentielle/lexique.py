@@ -113,7 +113,7 @@ def analyse(tweets: list[dict], eco_ids: set[str], bloc_of: dict[str, str]) -> d
     for f in load_formules():
         hits = [t for t in tweets if f["regex"].search(fold(t.get("text", "")))]
         if not hits:
-            formules.append({"key": f["key"], "label": f["label"], "total": 0})
+            formules.append({"key": f["key"], "label": f["label"], "en": f.get("en", ""), "total": 0})
             continue
         hits.sort(key=lambda t: (t.get("created_at") or "", t["id"]))
         first = hits[0]
@@ -125,7 +125,7 @@ def analyse(tweets: list[dict], eco_ids: set[str], bloc_of: dict[str, str]) -> d
         own = set(tokens(f["label"]))
         assoc = [k for k in keywords(inside, all_tokens - inside, top=TOP + len(own)) if k[0] not in own][:10]
         formules.append({
-            "key": f["key"], "label": f["label"], "total": len(hits),
+            "key": f["key"], "label": f["label"], "en": f.get("en", ""), "total": len(hits),
             "premiere": {"date": (first.get("created_at") or "")[:10], "c": first["handle"].lower(), "id": first["id"]},
             "par_candidat": dict(by_c.most_common()),
             "par_semaine": {w: dict(v) for w, v in sorted(by_w.items())},

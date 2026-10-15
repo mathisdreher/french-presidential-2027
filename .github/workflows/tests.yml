@@ -20,4 +20,4 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: python -m pytest -q
       - name: Vérifier la syntaxe du site
-        run: node --check site/app.js
+        run: node --check site/app.js && node --check site/i18n.js

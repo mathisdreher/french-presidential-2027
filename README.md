@@ -17,12 +17,35 @@ chaque théorie y est expliquée et sourcée, et trois jeux permettent de s'exer
    décision, code chaque jour tous les tweets. Claude est lancé à la demande comme second codeur.
 3. **Analyses sans modèle.** Appropriation des enjeux (Petrocik), suivi des formules
    (Krieg-Planque, `config/formules.yaml`) et vocabulaire spécifique (lexicométrie, G² de Dunning).
-4. **Site** sur GitHub Pages : onglets Aperçu, Discours, Mots, Tweets, Jouer et Méthode, bulles d'info
-   sourcées, photos des candidats, filtres par période et famille politique. Aucune donnée de visite
-   ni de jeu n'est enregistrée.
+4. **Site** sur GitHub Pages, en français et en anglais. Il s'ouvre sur l'onglet Jouer et ses trois
+   jeux (« Qui a tweeté ? », « Classez comme un agent », « Où vous situez-vous ? »), puis Aperçu
+   (fiches candidats, boussole écologique, graphiques), Discours (une fiche par théorie, avec
+   exemples), Mots, Tweets et Méthode. Bulles d'info sourcées, photos des candidats, filtres par
+   période et famille politique. Aucune donnée de visite ni de jeu n'est enregistrée.
+
+La boussole écologique place chaque candidat selon deux axes calculés sur ses tweets écologie : la
+position moyenne (favorable +1, critique −1) et le rapport à la croissance tiré des visions de Dryzek
+(`VISION_GROWTH_SCORE` dans le livre de codes). C'est un indice construit pour le site, expliqué
+comme tel dans sa bulle d'info.
 
 Le livre de codes `src/presidentielle/codebook.py` est la source unique : questions de Jev, prompt et
 schéma de Claude, mesures d'accord, libellés et bulles du site.
+
+### Version anglaise
+
+Le bouton FR / EN de l'en-tête bascule la langue ; `?lang=en` ouvre directement la version anglaise.
+Les textes viennent de trois endroits :
+
+| Contenu | Fichier |
+|---|---|
+| Textes d'interface | `site/i18n.js` |
+| Cadres théoriques, variables et catégories | `src/presidentielle/codebook_en.py` |
+| Phases, familles, événements, questions, formules, partis | champs `*_en` des fichiers de `config/` |
+
+Les tweets restent en français. Pour les jeux, Claude traduit chaque tweet anonymisé et ses indices
+lors de l'étape `games` ; tant qu'un tweet n'est pas traduit, la version anglaise l'affiche en
+français avec une mention. Un test vérifie que les deux langues ont les mêmes clés et que chaque clé
+utilisée par `site/app.js` existe.
 
 ## Mise en route
 
@@ -71,7 +94,7 @@ cp .env.example .env    # puis renseigner les clés
 python -m presidentielle fetch          # collecte
 python -m presidentielle classify       # Jev
 python -m presidentielle classify --engine claude --scope echantillon --sample-size 300
-python -m presidentielle games          # préparation des jeux par Claude
+python -m presidentielle games          # jeux : anonymisation et traduction anglaise par Claude
 python -m presidentielle publish        # validation, export CSV, site dans _site/
 python -m pytest -q
 ```
@@ -88,5 +111,5 @@ Hypothèse : 21 comptes, environ 100 tweets originaux par jour, soit 25 000 twee
 | Jev, environ 5 500 tokens par tweet à 0,042 $ par million | < 1 $ | ~6 $ |
 | Claude en lot, écologie et décisions incertaines, environ 25 % des tweets | ~8 à 15 $ | ~60 à 120 $ |
 | Claude, échantillon de validation de 300 tweets | | ~3 à 6 $ |
-| Claude, préparation des jeux | | ~2 $ |
+| Claude, préparation et traduction des jeux | | ~3 $ |
 | GitHub Actions et Pages, dépôt public | 0 $ | 0 $ |

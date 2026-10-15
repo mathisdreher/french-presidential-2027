@@ -201,6 +201,20 @@ FRAMEWORKS: tuple[Framework, ...] = (
         (Ref("Krieg-Planque, A. (2009). La notion de « formule » en analyse du discours. Cadre théorique et méthodologique. Besançon : Presses universitaires de Franche-Comté."),),
     ),
     Framework(
+        "boussole", "La boussole écologique", "Construction de ce site, d'après John Dryzek",
+        "La boussole place chaque candidat sur deux axes calculés à partir de ses tweets écologie. "
+        "L'axe horizontal mesure la position : chaque tweet favorable à l'action écologique compte +1, "
+        "chaque tweet critique −1, un tweet neutre 0. L'axe vertical mesure le rapport à la croissance, "
+        "d'après la typologie de Dryzek : le survivalisme et le radicalisme vert, qui posent des limites "
+        "à la croissance, comptent +1 ; le discours prométhéen, qui les nie, −1 ; la modernisation "
+        "écologique et le rationalisme économique, qui misent sur la croissance verte et le marché, −0,5 ; "
+        "les autres visions 0.",
+        "C'est un indice construit pour ce site, à visée pédagogique : il résume deux dimensions parmi "
+        "d'autres et dépend de la qualité du codage. Les candidats qui ont moins de 8 tweets écologie ne "
+        "sont pas placés.",
+        (Ref("Dryzek, J. S. (2013). The Politics of the Earth: Environmental Discourses, 3e éd. Oxford : Oxford University Press."),),
+    ),
+    Framework(
         "lexique", "Lexicométrie", "Ludovic Lebart, André Salem, Ted Dunning",
         "La lexicométrie, tradition française de l'analyse du discours politique, compte les mots "
         "sans les interpréter. On cherche le vocabulaire spécifique d'un locuteur : les mots qu'il "
@@ -539,6 +553,14 @@ REACTIVITE = Variable(
     instructions="The tweet reacts to a specific current event (a news item, a vote, a disaster, a statement by someone else).",
 )
 
+# Rapport à la croissance (axe vertical de la boussole), d'après la typologie de Dryzek
+VISION_GROWTH_SCORE = {
+    "survivalisme": 1.0, "radicalisme_vert": 1.0,
+    "pragmatisme_democratique": 0.0, "developpement_durable": 0.0, "rationalisme_administratif": 0.0,
+    "modernisation_ecologique": -0.5, "rationalisme_economique": -0.5,
+    "prometheen": -1.0,
+}
+
 VARIABLES: tuple[Variable, ...] = (
     ECOLOGIE, NIVEAU, THEMES, POSITION, CADRAGE, POLARISATION, ADVERSAIRE, VICTIME, PROCEDES, TOPOI,
     LEGITIMATION, RETARDEMENT, VISION, ETHOS, AGENTIVITE, MODALITE, ACTE, REGISTRE, REACTIVITE,
@@ -587,7 +609,7 @@ ENGINES = (
         "Claude est un grand modèle de langage. Lancé à la demande, il sert de second codeur : il code "
         "la même grille sans voir les réponses de Jev, ce qui permet de mesurer leur accord. Il relève "
         "aussi ce qu'un modèle de décision ne sait pas produire : le lexique marqué, les présupposés, "
-        "un résumé. Il prépare enfin les tweets anonymisés des jeux.",
+        "un résumé. Il prépare enfin les tweets anonymisés des jeux et leur traduction anglaise.",
         "Claude est utilisé sur les décisions incertaines de Jev, sur un échantillon de validation et "
         "pour les jeux.",
         (Ref("Anthropic. Claude.", "https://www.anthropic.com/claude"),),

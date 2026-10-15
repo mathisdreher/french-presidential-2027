@@ -1,64 +1,85 @@
 # Formules suivies (Krieg-Planque) : expressions qui circulent et font débat.
+# « en » : traduction affichée dans la version anglaise du site (la formule reste citée en français).
 # Les variantes sont des expressions régulières, comparées sans accents ni majuscules.
 # Ajoutez une formule dès qu'elle émerge dans le débat : l'historique est recalculé à chaque passage.
 formules:
   - key: ecologie_punitive
+    en: "punitive ecology"
     label: « Écologie punitive »
     variantes: ["ecologie punitive", "ecologie de la punition"]
   - key: planification_ecologique
+    en: "ecological planning"
     label: « Planification écologique »
     variantes: ["planification ecologique"]
   - key: transition_ecologique
+    en: "ecological transition"
     label: « Transition écologique »
     variantes: ["transition ecologique"]
   - key: transition_energetique
+    en: "energy transition"
     label: « Transition énergétique »
     variantes: ["transition energetique"]
   - key: sobriete
+    en: "sobriety"
     label: « Sobriété »
     variantes: ["sobriete"]
   - key: decroissance
+    en: "degrowth"
     label: « Décroissance »
     variantes: ["decroissance", "decroissant(e|s|es)?\\b"]
   - key: croissance_verte
+    en: "green growth"
     label: « Croissance verte »
     variantes: ["croissance verte"]
   - key: ecologie_populaire
+    en: "popular ecology"
     label: « Écologie populaire »
     variantes: ["ecologie populaire"]
   - key: ecologie_bon_sens
+    en: "common-sense ecology"
     label: « Écologie du bon sens »
     variantes: ["ecologie (de|du) bon sens", "ecologie pragmatique"]
   - key: ecologie_radicale
+    en: "“green Khmers”, radical ecology"
     label: « Khmers verts », « écologie radicale »
     variantes: ["khmers? verts?", "ayatollahs? (verts?|de l.ecologie)", "ecologie radicale", "ecologistes radicaux", "ecolo-?gauchis(te|tes|me)"]
   - key: urgence_climatique
+    en: "climate emergency"
     label: « Urgence climatique »
     variantes: ["urgence (climatique|ecologique)"]
   - key: justice_climatique
+    en: "climate justice"
     label: « Justice climatique »
     variantes: ["justice climatique"]
   - key: fin_du_mois
+    en: "end of the world, end of the month"
     label: « Fin du monde, fin du mois »
     variantes: ["fin du monde.{0,30}fin du mois", "fin du mois.{0,30}fin du monde"]
   - key: souverainete_energetique
+    en: "energy sovereignty"
     label: « Souveraineté énergétique »
     variantes: ["souverainete energetique", "independance energetique"]
   - key: regle_verte
+    en: "green rule"
     label: « Règle verte »
     variantes: ["regle verte"]
   - key: pacte_vert
+    en: "European Green Deal"
     label: « Pacte vert », « Green Deal »
     variantes: ["pacte vert", "green deal"]
   - key: zfe
+    en: "low-emission zones"
     label: « ZFE »
     variantes: ["\\bzfe\\b", "zones? a faibles? emissions?"]
   - key: agribashing
+    en: "farmer-bashing"
     label: « Agribashing »
     variantes: ["agri-?bashing"]
   - key: megabassines
+    en: "mega-reservoirs"
     label: « Mégabassines »
     variantes: ["mega-?bassines?"]
   - key: ecocide
+    en: "ecocide"
     label: « Écocide »
     variantes: ["ecocide"]

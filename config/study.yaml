@@ -1,4 +1,4 @@
-# Paramètres de l'étude.
+# Paramètres de l'étude. Les champs *_en alimentent la version anglaise du site.
 #
 # start : date de début du corpus. Tout compte jamais collecté est rattrapé depuis cette
 #         date (recherche full-archive de l'API X, sans limite de volume).
@@ -8,18 +8,22 @@ start: 2026-09-01
 phases:
   - key: reference
     label: Référence
+    label_en: Baseline
     start: 2026-09-01
     end: 2026-12-31
   - key: precampagne
     label: Pré-campagne
+    label_en: Pre-campaign
     start: 2027-01-01
     end: 2027-04-04
   - key: campagne
     label: Campagne officielle
+    label_en: Official campaign
     start: 2027-04-05
     end: 2027-04-17
   - key: entre_deux_tours
     label: 1er tour et entre-deux-tours
+    label_en: First round and run-off
     start: 2027-04-18
     end: 2027-05-02
 
@@ -27,40 +31,62 @@ phases:
 events:
   - date: 2026-11-09
     label: Ouverture de la COP31
+    label_en: COP31 opens
   - date: 2027-04-18
     label: 1er tour
+    label_en: First round
   - date: 2027-05-02
     label: 2nd tour
+    label_en: Run-off
 
-# Familles politiques utilisées pour les filtres et les comparaisons par camp (hypothèse H2).
+# Familles politiques utilisées pour les filtres et les comparaisons par camp.
 # Le rattachement de chaque candidat est un choix de codage de l'analyste (candidates.yaml).
 blocs:
   - key: gauche_radicale
     label: Gauche radicale
+    label_en: Radical left
   - key: gauche
     label: Gauche
+    label_en: Left
   - key: ecologistes
     label: Écologistes
+    label_en: Greens
   - key: centre
     label: Centre
+    label_en: Centre
   - key: droite
     label: Droite
+    label_en: Right
   - key: souverainistes
     label: Souverainistes
+    label_en: Sovereigntists
   - key: extreme_droite
     label: Extrême droite
+    label_en: Far right
 
 # Questions de l'étude, affichées sur le site (onglet Méthode).
 questions:
   - titre: Saillance
+    titre_en: Salience
     texte: L'écologie occupe-t-elle une place mineure dans les tweets de la plupart des candidats, et progresse-t-elle lors d'événements comme la COP31 ou les épisodes climatiques ?
+    texte_en: Does ecology take up a minor place in most candidates' tweets, and does it rise during events such as COP31 or extreme weather?
   - titre: Cadrage par camp
+    titre_en: Framing by camp
     texte: La droite et l'extrême droite cadrent-elles l'écologie comme une contrainte ou une affaire de souveraineté, et la gauche comme une urgence, une question de justice ou une opportunité ?
+    texte_en: Do the right and the far right frame ecology as a burden or a matter of sovereignty, and the left as an emergency, a question of justice or an opportunity?
   - titre: Énergie ou climat
+    titre_en: Energy or climate
     texte: À droite, parle-t-on davantage d'énergie et de nucléaire que de climat, et l'inverse à gauche ?
+    texte_en: On the right, is there more talk of energy and nuclear power than of climate, and the reverse on the left?
   - titre: Nous et eux
+    titre_en: Us and them
     texte: Les candidats critiques de l'écologie recourent-ils plus souvent à la présentation négative d'autrui, et les candidats favorables à l'autoprésentation positive ?
+    texte_en: Do candidates critical of ecology resort more often to negative other-presentation, and supportive candidates to positive self-presentation?
   - titre: Retardement
+    titre_en: Delay
     texte: Quels discours de retardement climatique dominent, et chez quels candidats, y compris parmi ceux qui se disent favorables à la transition ?
+    texte_en: Which discourses of climate delay dominate, and among which candidates, including those who say they support the transition?
   - titre: Émotion et engagement
+    titre_en: Emotion and engagement
     texte: Les tweets écologie au registre alarmiste ou indigné suscitent-ils plus de réactions que les tweets factuels ?
+    texte_en: Do ecology tweets in an alarmist or indignant register get more reactions than factual ones?

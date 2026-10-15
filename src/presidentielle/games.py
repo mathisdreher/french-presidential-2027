@@ -4,8 +4,9 @@ Sélection : tweets écologie assez longs, codés avec confiance, répartis entr
 Anonymisation en deux niveaux :
   - automatique (toujours) : liens, mentions, noms des candidats, partis, hashtags non génériques ;
   - Claude (à la demande) : réécriture minimale qui retire les indices trop reconnaissables
-    (slogans, fonctions, lieux personnels) en conservant les procédés du discours, et rédaction
-    de deux ou trois indices pédagogiques expliquant ce qui trahit le camp de l'auteur.
+    (slogans, fonctions, lieux personnels) en conservant les procédés du discours, rédaction
+    de deux ou trois indices pédagogiques expliquant ce qui trahit le camp de l'auteur, et
+    traduction anglaise du tweet et des indices pour la version anglaise du site.
 """
 
 from __future__ import annotations
@@ -81,6 +82,8 @@ def select(tweets: list[dict], rows: dict[str, dict], per_candidate: int = PER_C
 class GameRewrite(BaseModel):
     texte_anonymise: str = Field(description="The tweet rewritten minimally in French, without any clue that identifies the author or the party.")
     indices: list[str] = Field(description="Two or three short French sentences explaining which discourse features hint at the author's political camp.")
+    texte_en: str = Field(description="Faithful English translation of the anonymised tweet, keeping the placeholders.")
+    indices_en: list[str] = Field(description="The same clues, translated into English.")
     reconnaissable: bool = Field(description="True if the author would still be easy to recognise after anonymisation.")
 
 
@@ -88,7 +91,8 @@ GAMES_PROMPT = """Tu prépares des tweets pour un jeu pédagogique sur l'analyse
 
 1. Réécris le tweet le moins possible. Retire ou remplace tout ce qui identifie directement l'auteur : noms, prénoms, partis, slogans et hashtags de campagne, fonctions (« maire de… », « ancien Premier ministre »), lieux personnels, références à sa propre biographie. Remplace-les par [candidat], [parti], [ville] ou une formule neutre. Garde le vocabulaire, le ton, les procédés, les chiffres et les arguments : ce sont eux que le joueur doit apprendre à lire.
 2. Rédige deux ou trois indices courts, en français, qui expliquent ce qui dans le discours oriente vers un camp, en nommant le concept quand c'est utile : cadrage, carré idéologique (nous / eux), topos, procédé, vision de l'écologie, ethos. N'écris jamais le nom du candidat ni de son parti.
-3. Indique si l'auteur reste facile à reconnaître malgré tout.
+3. Traduis fidèlement en anglais le tweet anonymisé (texte_en), en gardant le ton et les procédés ; les marqueurs deviennent [candidate], [party], [town]. Traduis aussi les indices (indices_en). Les citations de formules du débat français, comme « écologie punitive », restent en français suivies de leur traduction entre parenthèses.
+4. Indique si l'auteur reste facile à reconnaître malgré tout.
 
 Réponds uniquement avec l'objet JSON demandé."""
 
@@ -97,7 +101,8 @@ def claude_rewrite(tweets: list[dict], *, model: Optional[str] = None, limit: Op
     """Passe Claude sur les tweets de jeu pas encore traités (appels immédiats, quelques centaines au plus)."""
     import anthropic
 
-    done = {r["id"] for r in read_jsonl(config.GAMES_FILE)}
+    # un tweet préparé avant l'ajout de la traduction anglaise est repris
+    done = {r["id"] for r in read_jsonl(config.GAMES_FILE) if r.get("texte_en")}
     todo = [t for t in tweets if t["id"] not in done][: limit or None]
     if not todo:
         log.info("Jeux : aucun tweet à préparer.")
@@ -122,7 +127,8 @@ def claude_rewrite(tweets: list[dict], *, model: Optional[str] = None, limit: Op
             continue
         out = resp.parsed_output
         append_jsonl(config.GAMES_FILE, [{"id": t["id"], "model": model, "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                                          "texte": out.texte_anonymise, "indices": out.indices, "reconnaissable": out.reconnaissable}])
+                                          "texte": out.texte_anonymise, "indices": out.indices, "texte_en": out.texte_en,
+                                          "indices_en": out.indices_en, "reconnaissable": out.reconnaissable}])
         n += 1
     log.info("Jeux : %d tweets préparés par Claude", n)
     return n

@@ -3,65 +3,40 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Écologie et présidentielle 2027</title>
-  <meta name="description" content="Ce que les candidats à la présidentielle 2027 publient sur X à propos de l'écologie, lu avec les outils de l'analyse critique du discours. Pour découvrir ces théories, en jouant aussi.">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Cpath d='M9 21c0-7 5-11 14-12-1 9-5 14-12 14' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+  <title>L'écologie dans la campagne 2027</title>
+  <meta name="description" content="Comment les candidats à la présidentielle 2027 parlent-ils d'écologie sur X ? Jouez pour apprendre à lire leur discours, puis explorez l'étude.">
+  <meta property="og:title" content="L'écologie dans la campagne 2027">
+  <meta property="og:description" content="Jouez pour apprendre à lire le discours écologique des candidats à la présidentielle 2027, puis explorez l'étude.">
+  <meta property="og:type" content="website">
+  <meta name="theme-color" content="#2a78d6">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232a78d6'/%3E%3Cpath d='M9 22c0-8 5-12 14-13-1 9-5 14-12 14' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
   <script>
     try { const t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
   </script>
 </head>
-<body>
-  <header class="masthead">
-    <div class="wrap masthead-inner">
-      <div>
-        <p class="eyebrow">Présidentielle 2027 · observatoire du discours</p>
-        <h1>L'écologie dans la campagne sur X</h1>
-        <p class="lede">Ce que les candidats publient sur X à propos du climat, de l'énergie et de l'environnement, lu tweet par tweet avec les outils de l'analyse critique du discours. Pour découvrir ces théories, et pour jouer avec.</p>
-        <p class="meta">Mise à jour <time id="updated">…</time></p>
-      </div>
-      <button id="theme-toggle" class="ghost-btn" type="button" aria-label="Changer de thème">
-        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
-        <span>Thème</span>
-      </button>
-    </div>
-  </header>
-
-  <div class="sticky">
-    <nav class="wrap main-tabs" aria-label="Sections">
-      <a href="#apercu" data-tab="apercu">Aperçu</a>
-      <a href="#discours" data-tab="discours">Discours</a>
-      <a href="#mots" data-tab="mots">Mots</a>
-      <a href="#tweets" data-tab="tweets">Tweets</a>
-      <a href="#jouer" data-tab="jouer">Jouer</a>
-      <a href="#methode" data-tab="methode">Méthode</a>
-    </nav>
-    <div class="filters" id="filters">
-      <div class="wrap filters-inner">
-        <label class="field"><span>Période</span><select id="f-period"></select></label>
-        <label class="field"><span>Famille politique</span><select id="f-bloc"></select></label>
-        <label class="field"><span>Mettre en avant</span><select id="f-focus"></select></label>
-      </div>
-    </div>
+<body data-tab="jouer" data-hero="full">
+  <a class="skip" href="#main">Aller au contenu</a>
+  <header id="top" class="top"></header>
+  <div class="sticky" id="sticky">
+    <nav class="wrap main-tabs" id="tabs" aria-label="Sections"></nav>
+    <div class="filters" id="filters" hidden></div>
   </div>
-
-  <main class="wrap">
-    <div id="banner" class="banner" hidden></div>
-    <section data-panel="apercu"></section>
+  <main id="main" class="wrap" tabindex="-1">
+    <div id="notice" class="notice" hidden></div>
+    <section data-panel="jouer"><p class="loading">Chargement…</p></section>
+    <section data-panel="apercu" hidden></section>
     <section data-panel="discours" hidden></section>
     <section data-panel="mots" hidden></section>
     <section data-panel="tweets" hidden></section>
-    <section data-panel="jouer" hidden></section>
     <section data-panel="methode" hidden></section>
   </main>
-
-  <footer class="wrap footer">
-    <p>Données : API X. Codage : Jev (TypeSafe) et Claude (Anthropic). Photos : Wikimedia Commons, crédits dans l'onglet Méthode. Les tweets restent la propriété de leurs auteurs ; chaque citation renvoie au message original. Aucune donnée de visite ni de jeu n'est enregistrée.</p>
-  </footer>
-
+  <footer id="footer" class="footer"></footer>
   <div id="popover" class="popover" role="dialog" aria-modal="false" hidden></div>
   <div id="tooltip" class="tooltip" role="status" hidden></div>
-  <noscript><p class="wrap">Ce site nécessite JavaScript.</p></noscript>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <noscript><p class="wrap">Ce site nécessite JavaScript. This site requires JavaScript.</p></noscript>
+  <script src="i18n.js" defer></script>
   <script src="app.js" defer></script>
 </body>
 </html>

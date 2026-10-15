@@ -4,6 +4,7 @@
 #           designe   -> investi par son parti / primaire
 #           pressenti -> non déclaré mais suivi (désactivé par défaut)
 # bloc    : famille politique (clé définie dans study.yaml), choix de codage à valider
+# party_en, note, note_en : facultatifs, pour la version anglaise et les signalements
 # enabled : false -> ignoré par le pipeline
 #
 # Liste établie mi-octobre 2026 (sources : France 24, Public Sénat, Touteleurope).
@@ -130,6 +131,7 @@ candidates:
   # --- Autres ---
   - name: Natacha Polony
     party: Sans étiquette
+    party_en: Independent
     bloc: souverainistes
     handle: NPolony
     status: declare

@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 from . import codebook as cb
+from . import codebook_en as en
 from . import config, games, lexique, photos
 from .fetch import account_status
 from .storage import load_json, read_jsonl
@@ -44,16 +45,21 @@ def _encode(var: cb.Variable, value):
 
 
 def _codebook() -> dict:
+    """Livre de codes exporté pour le site, en français et en anglais."""
     def fw(f: cb.Framework) -> dict:
         d = asdict(f)
         d["refs"] = [asdict(r) for r in f.refs]
+        label, auteurs, resume, etude = en.FRAMEWORKS[f.key]
+        d.update(label_en=label, auteurs_en=auteurs, resume_en=resume, dans_l_etude_en=etude)
         return d
     variables = []
     for v in cb.VARIABLES:
         variables.append({"key": v.key, "short": COLUMNS.get(v.key, "e"), "kind": v.kind, "label": v.label,
-                          "framework": v.framework, "scope": v.scope,
-                          "options": [{"key": o.key, "label": o.label, "fr": o.fr, "description": o.description} for o in v.options]})
-    return {"frameworks": [fw(f) for f in cb.FRAMEWORKS], "engines": [fw(f) for f in cb.ENGINES], "variables": variables}
+                          "label_en": en.VARIABLES[v.key], "framework": v.framework, "scope": v.scope,
+                          "options": [{"key": o.key, "label": o.label, "label_en": en.OPTIONS[v.key][o.key], "fr": o.fr,
+                                       "en": o.description} for o in v.options]})
+    return {"frameworks": [fw(f) for f in cb.FRAMEWORKS], "engines": [fw(f) for f in cb.ENGINES], "variables": variables,
+            "growth": cb.VISION_GROWTH_SCORE}
 
 
 def _account(cand: config.Candidate, users: dict, last_day: Optional[str], today: date) -> str:
@@ -110,11 +116,12 @@ def payload(raw_path: Path | None = None, cls_path: Path | None = None, validati
     for c in candidates:
         user = users.get(c.slug) or {}
         cand_out.append({
-            "key": c.slug, "name": c.name, "party": c.party, "bloc": c.bloc, "handle": c.handle, "status": c.status,
-            "enabled": c.enabled, "note": c.note, "compte": _account(c, users, last_day.get(c.slug), generated.date()),
+            "key": c.slug, "name": c.name, "party": c.party, "party_en": c.party_en, "bloc": c.bloc, "handle": c.handle,
+            "status": c.status, "enabled": c.enabled, "note": c.note, "note_en": c.note_en,
+            "compte": _account(c, users, last_day.get(c.slug), generated.date()),
             "dernier_tweet": last_day.get(c.slug), "abonnes": user.get("followers"),
-            "photo": pics.get(c.slug) or ({"url": user["image"], "source": f"https://x.com/{c.handle}", "auteur": "Photo de profil X", "licence": ""}
-                                          if user.get("image") else None),
+            "photo": pics.get(c.slug) or ({"url": user["image"], "source": f"https://x.com/{c.handle}", "auteur": "Photo de profil X",
+                                           "auteur_en": "X profile picture", "licence": ""} if user.get("image") else None),
         })
     bloc_of = {c.slug: c.bloc for c in candidates}
     return {
@@ -147,7 +154,8 @@ def games_payload(raw_path: Path | None = None, cls_path: Path | None = None, ga
         items.append({
             "i": t["id"], "c": slug, "d": (t.get("created_at") or "")[:10],
             "t": g["texte"] if g else games.anonymize(t.get("text", ""), candidates),
-            "m": "claude" if g else "auto", "ind": (g or {}).get("indices", []),
+            "t_en": (g or {}).get("texte_en", ""),
+            "m": "claude" if g else "auto", "ind": (g or {}).get("indices", []), "ind_en": (g or {}).get("indices_en", []),
             "codes": {k: r.get(k) for k in ("position", "cadrage", "vision", "procedes", "topoi", "retardement", "polarisation", "ethos")},
             "jev": {k: probs.get(k) for k in ("position", "cadrage", "procedes")} if probs else None,
             "claude": {k: (r.get("claude") or {}).get("values", {}).get(k) for k in ("position", "cadrage", "procedes")} if r.get("claude") else None,
