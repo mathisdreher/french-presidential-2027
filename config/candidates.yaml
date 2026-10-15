@@ -26,7 +26,7 @@ candidates:
   - name: Édouard Philippe
     party: Horizons
     bloc: centre
-    handle: EPhilippePM
+    handle: EPhilippe_LH
     status: declare
   - name: Bruno Retailleau
     party: Les Républicains
@@ -41,7 +41,7 @@ candidates:
   - name: David Lisnard
     party: Nouvelle Énergie
     bloc: droite
-    handle: dlisnard
+    handle: davidlisnard
     status: declare
   - name: Éric Zemmour
     party: Reconquête
@@ -51,7 +51,7 @@ candidates:
   - name: Olivier Becht
     party: Renaissance (dissident)
     bloc: centre
-    handle: olivierbecht
+    handle: becht_olivier
     status: declare
   - name: Nicolas Dupont-Aignan
     party: Debout la France
@@ -91,6 +91,11 @@ candidates:
     bloc: gauche
     handle: KBouamrane
     status: declare
+  - name: Marine Tondelier
+    party: Les Écologistes
+    bloc: ecologistes
+    handle: marinetondelier
+    status: designe
   - name: Delphine Batho
     party: Écologistes
     bloc: ecologistes
