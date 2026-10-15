@@ -7,10 +7,15 @@ name: Collecte quotidienne
 on:
   schedule:
     - cron: "17 5 * * *"   # 05:17 UTC, soit 6 h 17 en hiver et 7 h 17 en été à Paris
+    # Rattrapage : GitHub n'accepte qu'un seul run en attente par groupe « pipeline », et en annule
+    # un plus ancien quand un autre arrive (ex. un push pendant un long codage Claude). À 11:17 UTC,
+    # la collecte ne s'exécute que si aucune collecte n'a abouti aujourd'hui.
+    - cron: "17 11 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
   pages: write
   id-token: write
 
@@ -19,7 +24,30 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  controle:
+    runs-on: ubuntu-latest
+    outputs:
+      faire: ${{ steps.c.outputs.faire }}
+    steps:
+      - id: c
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          if [ "$SCHEDULE" != "17 11 * * *" ]; then echo "faire=oui" >> "$GITHUB_OUTPUT"; exit 0; fi
+          today=$(date -u +%F)
+          n=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/quotidien.yml/runs?status=success&created=%3E%3D$today&per_page=20" \
+            | jq '[.workflow_runs[] | select(.id != ${{ github.run_id }})] | length')
+          if [ "$n" -gt 0 ]; then
+            echo "Collecte du jour déjà faite : pas de rattrapage."; echo "faire=non" >> "$GITHUB_OUTPUT"
+          else
+            echo "Aucune collecte aboutie aujourd'hui : rattrapage."; echo "faire=oui" >> "$GITHUB_OUTPUT"
+          fi
+
   collecte:
+    needs: controle
+    if: needs.controle.outputs.faire == 'oui'
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
