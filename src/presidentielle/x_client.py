@@ -5,6 +5,7 @@ Endpoints utilisés :
   GET /2/users/{id}/tweets              -> timeline, collecte quotidienne (3 200 posts max)
   GET /2/tweets/search/all              -> recherche full-archive, rattrapage historique
                                            sans plafond (500 posts par page, 1 requête/s)
+  GET /2/tweets?ids=…                   -> relecture des métriques (100 posts par requête)
 
 Authentification : jeton Bearer (app-only). Facturation à l'usage (pay-per-use).
 """
@@ -112,6 +113,16 @@ class XClient:
             if not next_token or (max_pages and page >= max_pages):
                 return
 
+
+    # ------------------------------------------------------- relecture
+    def get_tweets(self, ids: list[str]) -> tuple[list[dict], list[str]]:
+        """Relit jusqu'à 100 tweets : (tweets trouvés, identifiants absents, supprimés ou devenus privés)."""
+        if len(ids) > MAX_RESULTS:
+            raise ValueError("100 tweets au plus par requête")
+        data = self._get("/tweets", {"ids": ",".join(ids), "tweet.fields": "id,created_at,public_metrics"})
+        found = data.get("data", [])
+        seen = {t["id"] for t in found}
+        return found, [i for i in ids if i not in seen]
 
     # ------------------------------------------------------- full-archive
     def iter_search_all(self, query: str, *, start_time: Optional[datetime] = None,

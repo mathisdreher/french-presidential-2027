@@ -240,6 +240,10 @@ details.fold summary { cursor: pointer; font-weight: 600; }
 .kpi .label { color: var(--ink-2); font-size: 13px; }
 .kpi .value { margin-top: 4px; font-size: 30px; font-weight: 680; letter-spacing: -0.01em; }
 .kpi.hero-kpi .value { font-size: 50px; line-height: 1.05; }
+.waffle-box { margin-top: 12px; }
+.waffle { display: grid; grid-template-columns: repeat(20, 7px); gap: 2px; }
+.waffle i { width: 7px; height: 7px; border-radius: 1.5px; background: var(--neutral-mark); }
+.waffle i.on { background: var(--accent); }
 .kpi .note { margin-top: 4px; color: var(--muted); font-size: 12px; }
 
 /* ========================================================================== candidats */
@@ -278,6 +282,18 @@ details.fold summary { cursor: pointer; font-weight: 600; }
 .bar-track:hover, .bar-track:focus-visible { background: var(--wash); }
 .bar { height: 14px; border-radius: 0 4px 4px 0; background: var(--accent); min-width: 2px; }
 .bar.dim { background: var(--deemph); }
+.stackbar { position: relative; height: 14px; border-radius: 0 4px 4px 0; background: var(--neutral-mark); min-width: 2px; overflow: hidden; }
+.stackbar .eco { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); }
+.stackbar.dim { opacity: .4; }
+.stack100 { display: flex; height: 14px; width: 100%; border-radius: 4px; overflow: hidden; gap: 2px; }
+.stack100 span { display: block; height: 100%; }
+.log-track { position: relative; height: 28px; border-radius: 6px; }
+.log-track:hover, .log-track:focus-visible { background: var(--wash); }
+.log-track::before { content: ""; position: absolute; left: 4%; right: 4%; top: 13px; height: 2px; background: var(--grid); }
+.log-track::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--axis); }
+.log-track.dimmed .log-dot { opacity: .35; }
+.log-dot { position: absolute; top: 7px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--surface); z-index: 1; }
+.log-dot.down { background: var(--accent-2); }
 .bar-value { margin-left: 8px; font-size: 13px; color: var(--ink-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .div-track { position: relative; height: 28px; border-radius: 6px; }
 .div-track:hover, .div-track:focus-visible { background: var(--wash); }
@@ -300,6 +316,31 @@ svg text { font-family: var(--font); }
 .series { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .end-label { fill: var(--ink-2); font-size: 12px; }
 .crosshair { stroke: var(--muted); stroke-width: 1; }
+.band { fill: var(--seq-1); opacity: .45; }
+.band-key { background: var(--seq-1); opacity: .6; }
+.vol-all { fill: var(--neutral-mark); }
+.vol-eco { fill: var(--accent); }
+.series.ref { stroke: var(--deemph); stroke-width: 1.5; }
+.multiples { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; margin-top: 10px; }
+.mini-cell { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px 6px; background: var(--surface-2); min-width: 0; }
+.mini-cell.is-focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.mini-head { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; min-width: 0; }
+.mini-head .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-head .v { margin-left: auto; color: var(--ink-2); font-weight: 500; font-variant-numeric: tabular-nums; }
+svg.mini { display: block; width: 100%; height: auto; margin-top: 4px; overflow: visible; }
+svg.mini .series { stroke-width: 1.8; }
+.net { position: relative; width: 100%; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; }
+.net-edges { position: absolute; inset: 0; width: 100%; height: 100%; }
+.net-edges line { stroke: var(--axis); opacity: .55; stroke-linecap: round; transition: opacity .12s ease; }
+.net-edges line.hl { stroke: var(--accent); opacity: .9; }
+.net.hovering .net-edges line:not(.hl) { opacity: .08; }
+.net-node { position: absolute; transform: translate(-50%, -50%); transition: opacity .12s ease; }
+.net.hovering .net-node:not(.hl) { opacity: .25; }
+.net-node.cand { padding: 0; border: 0; background: none; cursor: pointer; border-radius: 50%; }
+.net-node.cand .avatar { box-shadow: 0 0 0 2px var(--surface), var(--shadow); }
+.net-node.cand.focus .avatar { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
+.net-node.term { white-space: nowrap; padding: 2px 8px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); color: var(--ink); font-weight: 600; line-height: 1.3; cursor: default; }
+.net-node.term.hl { border-color: var(--accent); color: var(--accent-ink); }
 .heat-scroll { overflow-x: auto; overscroll-behavior-x: contain; padding-bottom: 4px; }
 .heat { --name: minmax(120px, 190px); display: grid; gap: 2px; align-items: end; grid-template-columns: var(--name) repeat(var(--cols), minmax(30px, 64px)); min-width: calc(150px + var(--cols) * 34px); }
 .heat .col-head { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 12px; color: var(--ink-2); max-height: 150px; padding: 4px 0; justify-self: center; line-height: 1.15; }
@@ -373,7 +414,16 @@ svg text { font-family: var(--font); }
 .tweet-head strong { color: var(--ink); font-size: 14px; }
 .tweet-text { margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .tweet-resume { margin: 0 0 8px; color: var(--ink-2); font-size: 13px; }
-.tweet-foot { margin-top: 8px; font-size: 12px; color: var(--muted); }
+.tweet-foot { margin-top: 8px; font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.tweet-eng { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px; font-size: 12.5px; color: var(--ink-2); }
+.eng-line { font-variant-numeric: tabular-nums; border-radius: 6px; }
+.eng-line:hover, .eng-line:focus-visible { background: var(--wash); }
+.rel-badge { font-weight: 750; font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--wash); color: var(--ink); font-variant-numeric: tabular-nums; }
+.rel-badge.up { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent-ink); }
+.rel-badge.down { background: color-mix(in srgb, var(--accent-2) 14%, transparent); }
+.conf-badge { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 1px 8px; background: var(--wash); color: var(--ink-2); }
+.conf-badge .dot { width: 8px; height: 8px; border-radius: 50%; }
+.conf-badge:hover, .conf-badge:focus-visible { background: var(--grid); color: var(--ink); }
 .lang-tag { display: inline-block; font-size: 10px; font-weight: 700; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; margin-left: 4px; vertical-align: 1px; }
 
 /* ========================================================================== Jouer */

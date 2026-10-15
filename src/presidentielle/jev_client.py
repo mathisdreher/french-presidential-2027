@@ -8,7 +8,7 @@ multiples sont posées comme une question oui/non par catégorie.
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, Optional
 
 from typesafe_sdk import Choice, Noul, Score, TypeSafeClient
 
@@ -103,6 +103,31 @@ class JevClassifier:
 
     def close(self) -> None:
         self.client.close()
+
+
+# Niveaux de confiance affichés sur le site : 0 faible, 1 moyenne, 2 élevée. Le niveau faible
+# correspond exactement à la règle qui confie une décision à Claude (low_confidence).
+NOUL_GREY = (0.3, 0.7)
+
+
+def level(kind: str, value: Optional[float]) -> Optional[int]:
+    """Niveau d'une décision : probabilité pour oui/non, confiance calibrée pour un choix ou un score."""
+    if value is None:
+        return None
+    if kind == "noul":
+        if NOUL_GREY[0] <= value <= NOUL_GREY[1]:
+            return 0
+        return 1 if 0.1 < value < 0.9 else 2
+    return 0 if value < 0.6 else 1 if value < 0.8 else 2
+
+
+def tweet_level(result: dict) -> Optional[int]:
+    """Niveau le plus bas parmi les décisions qui orientent le codage : écologie, puis position, cadrage, niveau."""
+    levels = [level("noul", (result.get("probabilities") or {}).get("parle_ecologie"))]
+    if (result.get("values") or {}).get("parle_ecologie"):
+        levels += [level("choice", (result.get("confidence") or {}).get(k)) for k in ("position", "cadrage", "niveau")]
+    levels = [x for x in levels if x is not None]
+    return min(levels) if levels else None
 
 
 def low_confidence(result: dict, threshold: float = 0.6) -> bool:

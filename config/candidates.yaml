@@ -89,19 +89,15 @@ candidates:
     status: declare
   - name: Karim Bouamrane
     party: Parti socialiste
+    party_en: Socialist Party
     bloc: gauche
-    handle: KBouamrane
+    handle: karim_bouamrane
     status: declare
   - name: Marine Tondelier
     party: Les Écologistes
     bloc: ecologistes
     handle: marinetondelier
     status: designe
-  - name: Delphine Batho
-    party: Écologistes
-    bloc: ecologistes
-    handle: delphinebatho
-    status: declare
   - name: Fabien Roussel
     party: PCF
     bloc: gauche_radicale

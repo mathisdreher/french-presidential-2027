@@ -9,15 +9,25 @@ chaque théorie y est expliquée et sourcée, et trois jeux permettent de s'exer
 
 1. **Collecte.** Chaque jour, les tweets originaux des comptes personnels des candidats
    (`config/candidates.yaml`). Tout compte jamais collecté est rattrapé depuis le 1er septembre 2026
-   par la recherche full-archive de l'API X, sans plafond.
-2. **Codage.** Une grille de 19 variables tirée de onze cadres théoriques : macrostructures et carré
+   par la recherche full-archive de l'API X, sans plafond. Un compte retiré de la liste est purgé de
+   toutes les données au passage suivant (l'historique git du dépôt de données permet de revenir en
+   arrière).
+2. **Engagement.** Chaque tweet est relu une fois 48 heures après sa publication pour mesurer j'aime,
+   reposts, réponses, citations, signets et vues au même âge (`data/raw/metrics.json`). Le site en tire
+   un engagement relatif : les interactions d'un tweet rapportées à l'habitude de son auteur. Des
+   réactualisations ponctuelles se lancent à la main, sans toucher à la mesure de référence.
+3. **Codage.** Une grille de 19 variables tirée de onze cadres théoriques : macrostructures et carré
    idéologique (van Dijk), cadrage (Entman), topoï (Wodak), légitimation (van Leeuwen), discours de
    retardement climatique (Lamb et al.), visions de l'écologie (Dryzek), ethos (Maingueneau, Amossy),
    agentivité et modalité (Fairclough, Halliday), actes de discours et registre. Jev, un modèle de
-   décision, code chaque jour tous les tweets. Claude est lancé à la demande comme second codeur.
-3. **Analyses sans modèle.** Appropriation des enjeux (Petrocik), suivi des formules
-   (Krieg-Planque, `config/formules.yaml`) et vocabulaire spécifique (lexicométrie, G² de Dunning).
-4. **Site** sur GitHub Pages, en français et en anglais. Il s'ouvre sur l'onglet Jouer et ses trois
+   décision, code chaque jour tous les tweets. Claude est lancé à la demande comme second codeur. La
+   confiance de Jev est affichée pour chaque tweet (faible, moyenne, élevée, avec le détail par
+   variable), et la page Méthode montre si l'accord avec Claude progresse avec elle.
+4. **Analyses sans modèle.** Appropriation des enjeux (Petrocik), suivi des formules
+   (Krieg-Planque, `config/formules.yaml`), vocabulaire spécifique (lexicométrie, G² de Dunning, mots
+   présents dans au moins deux tweets, tweets en langue étrangère écartés) et réseau candidats –
+   formules ou thèmes, affiché en version légère et téléchargeable pour Gephi (`.gexf`).
+5. **Site** sur GitHub Pages, en français et en anglais. Il s'ouvre sur l'onglet Jouer et ses trois
    jeux (« Qui a tweeté ? », « Classez comme un agent », « Où vous situez-vous ? »), puis Aperçu
    (fiches candidats, boussole écologique, graphiques), Discours (une fiche par théorie, avec
    exemples), Mots, Tweets et Méthode. Bulles d'info sourcées, photos des candidats, filtres par
@@ -77,8 +87,9 @@ dépenses dans chaque console, et ne collez jamais une clé dans un fichier ou u
 
 | Workflow | Déclenchement | Rôle |
 |---|---|---|
-| Collecte quotidienne | chaque jour à 05:17 UTC, ou à la main | collecte, Jev, lots Claude terminés, validation, export, site |
+| Collecte quotidienne | chaque jour à 05:17 UTC, ou à la main | purge, collecte, mesures à 48 h, Jev, lots Claude terminés, validation, export, site |
 | Codage Claude | à la main | Claude sur une portée : `ecologie_et_incertains`, `incertains`, `echantillon`, `jeux` ou `tous` |
+| Réactualiser l'engagement | à la main | relit les métriques d'une période ou d'un candidat, avec un plafond de tweets relus |
 | Publier le site | modification du code ou de la configuration | republie le site |
 | Rafraîchir les photos | à la main | met à jour `config/photos.json` depuis Wikipédia et Commons |
 | Tests | chaque push | tests et vérification du site |
@@ -94,6 +105,8 @@ cp .env.example .env    # puis renseigner les clés
 python -m presidentielle fetch          # collecte
 python -m presidentielle classify       # Jev
 python -m presidentielle classify --engine claude --scope echantillon --sample-size 300
+python -m presidentielle metrics        # mesures d'engagement à 48 h (--refresh --days 7 pour réactualiser)
+python -m presidentielle purge          # retirer les comptes absents de candidates.yaml
 python -m presidentielle games          # jeux : anonymisation et traduction anglaise par Claude
 python -m presidentielle publish        # validation, export CSV, site dans _site/
 python -m pytest -q
@@ -108,6 +121,8 @@ Hypothèse : 21 comptes, environ 100 tweets originaux par jour, soit 25 000 twee
 | Poste | Par mois | Étude complète |
 |---|---|---|
 | API X, environ 0,005 $ par tweet lu | ~15 $ | ~125 $ |
+| API X, relecture de chaque tweet à 48 h | ~15 $ | ~125 $, plus ~15 $ une fois pour les tweets déjà collectés |
+| API X, réactualisations manuelles | selon usage, plafonnées | |
 | Jev, environ 5 500 tokens par tweet à 0,042 $ par million | < 1 $ | ~6 $ |
 | Claude en lot, écologie et décisions incertaines, environ 25 % des tweets | ~8 à 15 $ | ~60 à 120 $ |
 | Claude, échantillon de validation de 300 tweets | | ~3 à 6 $ |

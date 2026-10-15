@@ -1,7 +1,8 @@
 """Construction du site statique : copie de site/, puis data.json et games.json.
 
 data.json : candidats (photos, statut du compte X), cadres théoriques et livre de codes,
-tweets codés en colonnes compactes, texte des seuls tweets écologie, lexicométrie, validation.
+tweets codés en colonnes compactes (avec l'engagement mesuré à 48 h et la confiance de Jev),
+texte des seuls tweets écologie, lexicométrie, validation.
 games.json : tweets anonymisés pour les jeux, avec leur codage et les probabilités de Jev.
 Le site agrège dans le navigateur, ce qui permet de filtrer par période et famille politique.
 """
@@ -20,6 +21,7 @@ from . import codebook as cb
 from . import codebook_en as en
 from . import config, games, lexique, photos
 from .fetch import account_status
+from .jev_client import level, tweet_level
 from .storage import load_json, read_jsonl
 
 log = logging.getLogger(__name__)
@@ -75,8 +77,37 @@ def _account(cand: config.Candidate, users: dict, last_day: Optional[str], today
     return "actif"
 
 
+# Variables dont Jev donne une confiance calibrée (choix et scores), avec leur clé courte
+CONF_VARS = [v for v in cb.VARIABLES if v.kind in ("choice", "score")]
+
+
+def _confidence(jev: dict | None, eco: bool) -> dict:
+    """Confiances de Jev, arrondies, pour l'infobulle des tweets écologie."""
+    conf = (jev or {}).get("confidence") or {}
+    return {COLUMNS[v.key]: round(conf[v.key], 2) for v in CONF_VARS if v.key in conf and (eco or v.scope != "ecologie")}
+
+
+def _confidence_spread(rows: dict) -> dict:
+    """Répartition des niveaux de confiance de Jev par variable : [faible, moyenne, élevée]."""
+    out = {}
+    jevs = [r["jev"] for r in rows.values() if r.get("jev")]
+    for var in [cb.ECOLOGIE, *CONF_VARS]:
+        counts = [0, 0, 0]
+        for j in jevs:
+            if var.scope == "ecologie" and not (j.get("values") or {}).get("parle_ecologie"):
+                continue
+            raw = (j.get("probabilities") or {}).get(var.key) if var.kind == "noul" else (j.get("confidence") or {}).get(var.key)
+            lv = level(var.kind, raw)
+            if lv is not None:
+                counts[lv] += 1
+        if sum(counts):
+            out[var.key] = counts
+    return out
+
+
 def payload(raw_path: Path | None = None, cls_path: Path | None = None, validation_path: Path | None = None,
-            candidates: list[config.Candidate] | None = None, users: dict | None = None) -> dict:
+            candidates: list[config.Candidate] | None = None, users: dict | None = None,
+            metrics_path: Path | None = None) -> dict:
     raw_path = raw_path or config.RAW_TWEETS_FILE
     cls_path = cls_path or config.CLASSIFICATIONS_FILE
     validation_path = validation_path or config.VALIDATION_FILE
@@ -87,10 +118,12 @@ def payload(raw_path: Path | None = None, cls_path: Path | None = None, validati
     pics = photos.load()
     index = {c.slug: i for i, c in enumerate(candidates)}
     rows = {r["id"]: r for r in read_jsonl(cls_path)}
-    raw = list(read_jsonl(raw_path))
+    raw = [t for t in read_jsonl(raw_path) if t["handle"].lower() in index]
+    measures = load_json(metrics_path or config.METRICS_FILE, {})
 
-    cols = ["i", "c", "d", "e", "p", "s", "l", "rt", *COLUMNS.values()]
-    out_rows, texts, last_day, eco_ids = [], {}, {}, set()
+    # Engagement : mesure de référence à 48 h si elle existe, sinon chiffres relevés à la collecte (ma vide)
+    cols = ["i", "c", "d", "e", "p", "s", "l", "rt", "rp", "qt", "bm", "vw", "ma", "cj", *COLUMNS.values()]
+    out_rows, texts, last_day, eco_ids, refreshed = [], {}, {}, set(), {}
     for t in raw:
         slug = t["handle"].lower()
         day = (t.get("created_at") or "")[:10]
@@ -101,14 +134,21 @@ def payload(raw_path: Path | None = None, cls_path: Path | None = None, validati
             continue
         eco = bool(r["parle_ecologie"])
         p = ((r.get("jev") or {}).get("probabilities") or {}).get("parle_ecologie")
+        m = measures.get(t["id"]) or {}
+        h48 = m.get("h48") if m.get("h48") and not m["h48"].get("absent") else None
+        src = h48 or t
         row = [t["id"], index[slug], day, 1 if eco else 0, None if p is None else round(p, 3),
-               (r.get("final_source") or "j")[:1], t.get("likes", 0), t.get("retweets", 0)]
+               (r.get("final_source") or "j")[:1], src.get("likes") or 0, src.get("retweets") or 0, src.get("replies") or 0,
+               src.get("quotes") or 0, src.get("bookmarks") or 0, src.get("impressions"), h48.get("age_h") if h48 else None,
+               tweet_level(r["jev"]) if r.get("jev") else None]
+        if m.get("maj") and not m["maj"].get("absent"):
+            refreshed[t["id"]] = [m["maj"]["at"][:10], m["maj"].get("likes"), m["maj"].get("impressions")]
         row += [_encode(cb.VARIABLE_BY_KEY[k], r.get(k)) for k in COLUMNS]
         out_rows.append(row)
         if eco:
             eco_ids.add(t["id"])
             texts[t["id"]] = {k: v for k, v in (("t", t.get("text", "")), ("rs", r.get("resume")), ("lx", r.get("lexique")),
-                                                 ("im", r.get("implicites"))) if v}
+                                                 ("im", r.get("implicites")), ("cf", _confidence(r.get("jev"), eco))) if v}
     out_rows.sort(key=lambda x: x[2])
 
     generated = datetime.now(timezone.utc)
@@ -131,6 +171,8 @@ def payload(raw_path: Path | None = None, cls_path: Path | None = None, validati
         "codebook": _codebook(),
         "tweets": {"cols": cols, "rows": out_rows},
         "texts": texts,
+        "maj": refreshed,
+        "confiance": _confidence_spread(rows),
         "lexique": lexique.analyse(raw, eco_ids, bloc_of) if raw else None,
         "validation": load_json(validation_path, None),
     }

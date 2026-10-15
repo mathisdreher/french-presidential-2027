@@ -34,6 +34,20 @@ def test_payload(tmp_path):
     assert any(f["key"] == "ecologie_punitive" and f["total"] >= 1 for f in data["lexique"]["formules"])
 
 
+def test_payload_engagement_and_confidence(tmp_path):
+    metrics_path = tmp_path / "metrics.json"
+    metrics_path.write_text(json.dumps({"1001": {"h48": {"likes": 5, "retweets": 1, "replies": 2, "quotes": 0, "bookmarks": 3,
+                                                         "impressions": 700, "age_h": 50, "at": "2026-10-03T10:00:00Z"},
+                                                 "maj": {"likes": 9, "impressions": 999, "at": "2026-10-10T10:00:00Z"}}}))
+    data = site.payload(validation_path=tmp_path / "absent.json", users={}, metrics_path=metrics_path, **KW)
+    rows = {r["i"]: r for r in _decode(data)}
+    assert {"rp", "qt", "bm", "vw", "ma", "cj"} <= set(data["tweets"]["cols"])
+    assert (rows["1001"]["l"], rows["1001"]["bm"], rows["1001"]["vw"], rows["1001"]["ma"]) == (5, 3, 700, 50)
+    assert rows["1002"]["l"] == 800 and rows["1002"]["ma"] is None  # chiffres de la collecte, pas de mesure à 48 h
+    assert data["maj"]["1001"] == ["2026-10-10", 9, 999]
+    assert rows["1001"]["cj"] == 2 and "parle_ecologie" in data["confiance"]
+
+
 def test_payload_english_fields(tmp_path):
     data = site.payload(validation_path=tmp_path / "absent.json", users={}, **KW)
     assert all("party_en" in c and "note_en" in c for c in data["candidates"])

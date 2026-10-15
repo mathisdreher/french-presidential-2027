@@ -215,12 +215,43 @@ FRAMEWORKS: tuple[Framework, ...] = (
         (Ref("Dryzek, J. S. (2013). The Politics of the Earth: Environmental Discourses, 3e éd. Oxford : Oxford University Press."),),
     ),
     Framework(
+        "engagement", "L'engagement relatif", "Mesure de ce site, d'après les études de l'engagement en ligne",
+        "Les chiffres bruts d'un tweet dépendent d'abord de la notoriété de son auteur : un candidat suivi par "
+        "deux millions de comptes obtient mécaniquement plus de réactions qu'un autre. Pour comparer, on rapporte "
+        "chaque tweet à l'habitude de son auteur : l'engagement relatif est le nombre d'interactions (j'aime, "
+        "reposts, réponses, citations) divisé par la médiane des interactions de ses tweets. ×2 signifie deux fois "
+        "plus de réactions que d'habitude, ×0,5 deux fois moins. Les travaux sur les réseaux sociaux montrent que "
+        "l'émotion et l'indignation morale favorisent la diffusion d'un message.",
+        "Les interactions sont relevées 48 heures après la publication, quand l'essentiel des réactions est acquis, "
+        "pour comparer tous les tweets au même âge ; les tweets collectés avant cette mesure ont été relus plus "
+        "tard. La médiane n'est calculée que pour les candidats qui ont au moins 10 tweets mesurés. Les vues sont "
+        "affichées à part : elles mesurent l'exposition, pas la réaction.",
+        (Ref("Brady, W. J. et al. (2017). Emotion shapes the diffusion of moralized content in social networks. PNAS, 114(28), 7313-7318.",
+             "https://doi.org/10.1073/pnas.1618923114"),
+         Ref("Bene, M. (2017). Go viral on the Facebook! Interactions between candidates and followers on Facebook during the Hungarian general election campaign of 2014. Information, Communication & Society, 20(4), 513-529.",
+             "https://doi.org/10.1080/1369118X.2016.1198411")),
+    ),
+    Framework(
+        "reseau", "Le réseau des mots du débat", "Analyse de réseaux ; Mathieu Jacomy et coauteurs (Gephi)",
+        "Un réseau relie les candidats aux formules ou aux thèmes qu'ils emploient. Deux candidats proches dans le "
+        "dessin partagent des expressions ou des sujets ; une formule placée au centre circule entre les camps, une "
+        "formule en périphérie reste l'apanage de quelques-uns. La position des points n'a pas d'unité : seules "
+        "comptent les proximités.",
+        "Version légère, calculée dans votre navigateur par une disposition à ressorts proche de ForceAtlas2, "
+        "l'algorithme de Gephi. L'épaisseur d'un lien est le nombre de tweets. Le fichier .gexf s'ouvre dans Gephi "
+        "pour une analyse complète.",
+        (Ref("Jacomy, M., Venturini, T., Heymann, S. et Bastian, M. (2014). ForceAtlas2, a continuous graph layout algorithm for handy network visualization designed for the Gephi software. PLoS ONE, 9(6), e98853.",
+             "https://doi.org/10.1371/journal.pone.0098853"),),
+    ),
+    Framework(
         "lexique", "Lexicométrie", "Ludovic Lebart, André Salem, Ted Dunning",
         "La lexicométrie, tradition française de l'analyse du discours politique, compte les mots "
         "sans les interpréter. On cherche le vocabulaire spécifique d'un locuteur : les mots qu'il "
         "emploie significativement plus que les autres.",
         "Calculé sans modèle : pour chaque candidat, les mots de ses tweets écologie les plus "
-        "sur-représentés par rapport aux autres candidats, selon le rapport de vraisemblance de Dunning.",
+        "sur-représentés par rapport aux autres candidats, selon le rapport de vraisemblance de Dunning. Un mot "
+        "doit apparaître dans au moins deux tweets ; les tweets en langue étrangère, les mots vides, les nombres "
+        "et le nom du candidat sont écartés, et un même mot compte au plus trois fois par tweet.",
         (Ref("Lebart, L. et Salem, A. (1994). Statistique textuelle. Paris : Dunod."),
          Ref("Dunning, T. (1993). Accurate methods for the statistics of surprise and coincidence. Computational Linguistics, 19(1), 61-74.",
              "https://aclanthology.org/J93-1003")),
@@ -613,6 +644,20 @@ ENGINES = (
         "Claude est utilisé sur les décisions incertaines de Jev, sur un échantillon de validation et "
         "pour les jeux.",
         (Ref("Anthropic. Claude.", "https://www.anthropic.com/claude"),),
+    ),
+    Framework(
+        "confiance", "La confiance de Jev", "TypeSafe ; calibration d'après Guo et coauteurs",
+        "Pour chaque décision, Jev donne une probabilité (question oui ou non) ou un indice de confiance calibré "
+        "(choix entre catégories). Calibré signifie qu'une décision prise avec une confiance de 0,8 devrait être "
+        "juste environ 8 fois sur 10. Montrer cette confiance permet de vérifier le codage : on sait où le modèle "
+        "hésite.",
+        "Trois niveaux. Faible : probabilité d'écologie entre 0,3 et 0,7, ou confiance inférieure à 0,6 sur la "
+        "position, le cadrage ou la centralité de l'écologie ; c'est la règle qui confie la décision à Claude quand "
+        "il est lancé. Moyenne : confiance jusqu'à 0,8 (probabilité jusqu'à 0,9 pour l'écologie). Élevée au-delà. "
+        "L'onglet Méthode montre si l'accord avec Claude progresse avec la confiance de Jev, signe d'une confiance "
+        "bien calibrée.",
+        (Ref("Guo, C., Pleiss, G., Sun, Y. et Weinberger, K. Q. (2017). On calibration of modern neural networks. Proceedings of ICML, PMLR 70, 1321-1330.",
+             "https://proceedings.mlr.press/v70/guo17a.html"),),
     ),
     Framework(
         "fiabilite", "Mesurer l'accord entre codeurs", "Klaus Krippendorff",

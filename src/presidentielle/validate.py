@@ -149,6 +149,31 @@ def evaluate(pairs: list[tuple[dict, dict, Optional[float]]]) -> dict:
     return out
 
 
+def by_confidence(rows: list[dict]) -> dict:
+    """Accord Jev / Claude selon le niveau de confiance de Jev (0 faible, 1 moyenne, 2 élevée).
+
+    Si la confiance de Jev est bien calibrée, l'accord doit croître avec elle.
+    """
+    from .jev_client import level
+
+    out = {}
+    for var in cb.VARIABLES:
+        if var.kind == "multi":
+            continue
+        bins: dict[int, list[bool]] = {0: [], 1: [], 2: []}
+        for r in rows:
+            j, c = r["jev"]["values"], r["claude"]["values"]
+            if not _in_scope(var, j, c) or j.get(var.key) is None or c.get(var.key) is None:
+                continue
+            raw = (r["jev"].get("probabilities") or {}).get(var.key) if var.kind == "noul" else (r["jev"].get("confidence") or {}).get(var.key)
+            lv = level(var.kind, raw)
+            if lv is not None:
+                bins[lv].append(j.get(var.key) == c.get(var.key))
+        if any(bins.values()):
+            out[var.key] = [{"niveau": k, "n": len(v), "accord": _r(sum(v) / len(v)) if v else None} for k, v in bins.items()]
+    return out
+
+
 def run() -> dict:
     rows = {r["id"]: r for r in read_jsonl(config.CLASSIFICATIONS_FILE)}
     sample = load_json(config.VALIDATION_SAMPLE_FILE, {"items": []}).get("items", [])
@@ -168,6 +193,7 @@ def run() -> dict:
             "complet": evaluate([pair(r) for r in in_sample_all]),
         },
         "double_code": evaluate([pair(r) for r in double]),
+        "par_confiance": by_confidence(double),
         "routage": {
             "tweets_codes_jev": sum(1 for r in rows.values() if r.get("jev")),
             "tweets_codes_claude": sum(1 for r in rows.values() if r.get("claude")),

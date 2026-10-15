@@ -45,6 +45,13 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--collect-pending", action="store_true", help="Lot : récupérer les lots terminés")
     c.add_argument("--dry-run", action="store_true", help="Compter les tweets concernés sans appel")
 
+    m = sub.add_parser("metrics", help="Engagement : mesures à 48 h, ou réactualisation manuelle avec --refresh")
+    m.add_argument("--refresh", action="store_true", help="Relire une période, sans toucher à la mesure de référence à 48 h")
+    m.add_argument("--days", type=int, help="Réactualisation : tweets publiés dans les N derniers jours (défaut : tous)")
+    m.add_argument("--candidate", help="Réactualisation : un seul candidat (handle)")
+    m.add_argument("--max", type=int, help="Nombre maximum de tweets relus (garde-fou de coût)")
+    sub.add_parser("purge", help="Retirer des données les comptes absents de config/candidates.yaml")
+
     g = sub.add_parser("games", help="Préparer les tweets des jeux avec Claude (anonymisation fine et indices)")
     g.add_argument("--limit", type=int)
     g.add_argument("--model")
@@ -53,7 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("validate", help="Accord Jev / Claude")
     sub.add_parser("export", help="Export CSV du codage dans le dépôt de données")
     for name, help_ in (("site", "Construire le site"), ("publish", "validate + export + site"),
-                        ("daily", "Tâche quotidienne : fetch + Jev + lots Claude terminés + publish")):
+                        ("daily", "Tâche quotidienne : purge + fetch + mesures à 48 h + Jev + lots Claude terminés + publish")):
         s = sub.add_parser(name, help=help_)
         s.add_argument("--out", type=Path, default=config.ROOT / "_site")
     return p
@@ -104,6 +111,19 @@ def main(argv=None) -> int:
         logging.getLogger(noisy).setLevel(logging.WARNING)
     config.load_env()
 
+    if args.cmd == "purge":
+        from . import purge
+        print(purge.run())
+        return 0
+    if args.cmd == "metrics":
+        from . import metrics
+        from .x_client import XClient
+        client = XClient(config.x_bearer_token())
+        if args.refresh:
+            metrics.refresh(client, days=args.days, candidate=args.candidate, max_reads=args.max)
+        else:
+            metrics.run_h48(client, max_reads=args.max or metrics.DAILY_MAX_READS)
+        return 0
     if args.cmd in ("fetch", "daily"):
         from . import fetch
         from .x_client import XClient
@@ -113,7 +133,13 @@ def main(argv=None) -> int:
             fetch.fetch(client, cands, days=args.days, since=args.since, until=args.until,
                         max_pages=args.max_pages, backfill=args.backfill)
             return 0
+        from . import metrics, purge
+        purge.run()
         fetch.fetch(client, cands)
+        try:
+            metrics.run_h48(client)
+        except Exception as e:  # noqa: BLE001 - une relecture des métriques ratée ne doit pas bloquer la collecte
+            logging.getLogger(__name__).warning("Mesures à 48 h impossibles : %s", e)
         classify_mod.classify_jev(classify_mod.pending_tweets("jev"))
         if os.environ.get("ANTHROPIC_API_KEY"):
             try:

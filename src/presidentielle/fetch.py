@@ -70,7 +70,9 @@ def normalize(tweet: dict, cand: config.Candidate) -> dict:
         "retweets": metrics.get("retweet_count", 0),
         "replies": metrics.get("reply_count", 0),
         "quotes": metrics.get("quote_count", 0),
+        "bookmarks": metrics.get("bookmark_count", 0),
         "impressions": metrics.get("impression_count"),
+        "fetched_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "url": f"https://x.com/{cand.handle}/status/{tweet['id']}",
     }
 

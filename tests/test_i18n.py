@@ -42,6 +42,7 @@ def test_interface_keys():
     assert not used - fr, sorted(used - fr)
     assert not {f"{k}_{n}" for k in plural for n in ("one", "other")} - fr
     # Toute clé du dictionnaire doit servir : littéral dans app.js, ou clé construite (onglets, jeux, sections…)
-    dynamic = re.compile(r"^(tab_|account_|limit_\d|step\d_[tp]|g_(qui|agent|situer)(_text|_level)?$|m_(questions|corpus|moteurs|fiabilite|comptes|limites|codebook|credits)$)")
+    dynamic = re.compile(r"^(tab_|account_|limit_\d|step\d_[tp]|conf_(faible|moyenne|elevee)$|g_(qui|agent|situer)(_text|_level)?$"
+                         r"|m_(questions|corpus|moteurs|fiabilite|confiance|comptes|limites|codebook|credits)$)")
     unused = [k for k in fr if not dynamic.match(k) and f'"{re.sub(r"_(one|other)$", "", k)}"' not in app]
     assert not unused, sorted(unused)

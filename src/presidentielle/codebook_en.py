@@ -199,12 +199,34 @@ FRAMEWORKS = {
         "This is an index built for this site, for teaching purposes: it sums up two dimensions among others and "
         "depends on the quality of the coding. Candidates with fewer than 8 ecology tweets are not placed.",
     ),
+    "engagement": (
+        "Relative engagement", "A measure built for this site, after studies of online engagement",
+        "A tweet's raw figures depend first on how well known its author is: a candidate followed by two million "
+        "accounts mechanically gets more reactions than another. To compare, each tweet is set against its author's "
+        "habit: relative engagement is the number of interactions (likes, reposts, replies, quotes) divided by the "
+        "median interactions of their tweets. ×2 means twice as many reactions as usual, ×0.5 half as many. Research "
+        "on social networks shows that emotion and moral outrage help a message spread.",
+        "Interactions are recorded 48 hours after posting, once most reactions are in, so that all tweets are "
+        "compared at the same age; tweets collected before this measure was set up were read again later. The "
+        "median is only computed for candidates with at least 10 measured tweets. Views are shown separately: they "
+        "measure exposure, not reaction.",
+    ),
+    "reseau": (
+        "The network of the debate's words", "Network analysis; Mathieu Jacomy and co-authors (Gephi)",
+        "A network links the candidates to the formulas or topics they use. Two candidates close together in the "
+        "drawing share expressions or subjects; a formula in the centre travels between camps, one on the edge "
+        "belongs to a few. The positions have no unit: only proximity matters.",
+        "A light version, computed in your browser with a spring layout close to ForceAtlas2, Gephi's algorithm. "
+        "The thickness of a link is the number of tweets. The .gexf file opens in Gephi for a full analysis.",
+    ),
     "lexique": (
         "Lexicometry", "Ludovic Lebart, André Salem, Ted Dunning",
         "Lexicometry, a French tradition in political discourse analysis, counts words without interpreting them. "
         "It looks for a speaker's distinctive vocabulary: the words they use significantly more than others.",
         "Computed without any model: for each candidate, the words of their ecology tweets most over-represented "
-        "compared with the other candidates, according to Dunning's log-likelihood ratio. Words stay in French.",
+        "compared with the other candidates, according to Dunning's log-likelihood ratio. A word must appear in at "
+        "least two tweets; tweets in other languages, stop words, numbers and the candidate's own name are left out, "
+        "and a word counts at most three times per tweet. Words stay in French.",
     ),
     # moteurs
     "jev": (
@@ -222,6 +244,16 @@ FRAMEWORKS = {
         "decision model cannot produce: loaded vocabulary, presuppositions, a summary. Finally, it prepares the "
         "anonymised tweets for the games, with their English translation.",
         "Claude is used on Jev's uncertain decisions, on a validation sample and for the games.",
+    ),
+    "confiance": (
+        "Jev's confidence", "TypeSafe; calibration after Guo and co-authors",
+        "For each decision, Jev gives a probability (yes or no question) or a calibrated confidence score (choice "
+        "between categories). Calibrated means that a decision made with a confidence of 0.8 should be right about 8 "
+        "times out of 10. Showing this confidence makes the coding auditable: you can see where the model hesitates.",
+        "Three levels. Low: probability of ecology between 0.3 and 0.7, or confidence below 0.6 on stance, frame or "
+        "how central ecology is; this is the rule that sends the decision to Claude when it runs. Medium: confidence "
+        "up to 0.8 (probability up to 0.9 for ecology). High above that. The Method tab shows whether agreement with "
+        "Claude rises with Jev's confidence, a sign of well-calibrated confidence.",
     ),
     "fiabilite": (
         "Measuring agreement between coders", "Klaus Krippendorff",

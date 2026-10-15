@@ -75,6 +75,9 @@ const MIN_N_SCALE = 10;
 const COMPASS_MIN = 8;
 const COMPASS_MIN_VISION = 3;
 const CHIP_LIMIT = 6;
+const ENG_MIN = 10;          // tweets mesurés à 48 h requis pour établir l'habitude d'un candidat
+const LEVELS = ["faible", "moyenne", "elevee"];
+const LEVEL_COLOR = ["var(--accent-2)", "var(--neutral-mark)", "var(--accent)"];
 
 /* =================================================================== langue */
 const MESSAGES = window.MESSAGES || { fr: {}, en: {} };
@@ -102,6 +105,7 @@ function setupFormats() {
     p0: new Intl.NumberFormat(loc, { maximumFractionDigits: 0 }),
     f2: new Intl.NumberFormat(loc, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
     s2: new Intl.NumberFormat(loc, { minimumFractionDigits: 2, maximumFractionDigits: 2, signDisplay: "exceptZero" }),
+    sig2: new Intl.NumberFormat(loc, { minimumSignificantDigits: 2, maximumSignificantDigits: 2 }),
     day: new Intl.DateTimeFormat(loc, { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }),
     short: new Intl.DateTimeFormat(loc, { day: "numeric", month: "short", timeZone: "UTC" }),
     coll: new Intl.Collator(loc),
@@ -118,11 +122,12 @@ const fmtShort = (s) => FMT.short.format(parseDay(s));
 function weekStart(day) { const d = parseDay(day); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return isoDay(d); }
 
 /* =================================================================== état */
-const X_DEFAULT = { cand: "", theme: "", pos: "", cad: "", concept: "", q: "", sort: "date", shown: 15 };
+const X_DEFAULT = { cand: "", theme: "", pos: "", cad: "", concept: "", conf: "", q: "", sort: "date", shown: 15 };
 const S = {
   data: null, games: { items: [] }, cands: [], cand: new Map(), vars: new Map(), fw: new Map(), tweets: [],
   periods: [], period: "all", bloc: "", focus: "", tab: "jouer",
   apercuHeat: "themes", discours: "carre", discoursVar: {}, discoursScope: "ecologie", selectedCell: null,
+  salMode: "part", evoMode: "ensemble", netMode: "formules", engBase: new Map(),
   x: { ...X_DEFAULT }, mots: { who: "", mode: "candidats" },
   tables: new Map(), openTables: new Set(), openChips: new Set(),
   play: null, filtersOpen: false, langInUrl: false, scrollTo: null, focusTo: null,
@@ -139,7 +144,8 @@ function decode(data) {
   const at = Object.fromEntries(cols.map((c, i) => [c, i]));
   const vars = data.codebook.variables.filter((v) => v.short !== "e");
   S.tweets = rows.map((r) => {
-    const tw = { i: r[at.i], c: S.cands[r[at.c]].key, d: r[at.d], e: r[at.e], p: r[at.p], s: r[at.s], l: r[at.l], rt: r[at.rt] };
+    const tw = { i: r[at.i], c: S.cands[r[at.c]].key, d: r[at.d], e: r[at.e], p: r[at.p], s: r[at.s], l: r[at.l], rt: r[at.rt],
+      rp: r[at.rp], qt: r[at.qt], bm: r[at.bm], vw: r[at.vw], ma: r[at.ma], cj: r[at.cj] };
     for (const v of vars) {
       const raw = r[at[v.short]];
       if (raw === null || raw === undefined) { tw[v.key] = v.kind === "multi" ? [] : null; continue; }
@@ -148,10 +154,23 @@ function decode(data) {
       else tw[v.key] = (v.options[raw] || {}).key || null;
     }
     const tx = data.texts[tw.i];
-    if (tx) Object.assign(tw, { t: tx.t, rs: tx.rs, lx: tx.lx, im: tx.im });
+    if (tx) Object.assign(tw, { t: tx.t, rs: tx.rs, lx: tx.lx, im: tx.im, cf: tx.cf });
     return tw;
   });
+  // Habitude de chaque candidat : médiane des interactions de ses tweets mesurés à 48 h, sur toute l'étude
+  const by = new Map();
+  for (const tw of S.tweets) if (tw.ma !== null && tw.ma !== undefined) { if (!by.has(tw.c)) by.set(tw.c, []); by.get(tw.c).push(interactions(tw)); }
+  for (const [k, list] of by) if (list.length >= ENG_MIN) { const m = median(list); if (m > 0) S.engBase.set(k, m); }
 }
+const interactions = (tw) => (tw.l || 0) + (tw.rt || 0) + (tw.rp || 0) + (tw.qt || 0);
+function median(xs) { const a = [...xs].sort((x, y) => x - y), n = a.length; return n ? (n % 2 ? a[(n - 1) / 2] : (a[n / 2 - 1] + a[n / 2]) / 2) : null; }
+function quantile(xs, q) { const a = [...xs].sort((x, y) => x - y); if (!a.length) return null; const i = (a.length - 1) * q, lo = Math.floor(i); return a[lo] + (a[Math.ceil(i)] - a[lo]) * (i - lo); }
+// Engagement relatif : interactions à 48 h rapportées à l'habitude du candidat (null si non mesurable)
+function relEng(tw) {
+  const base = S.engBase.get(tw.c);
+  return base && tw.ma !== null && tw.ma !== undefined ? interactions(tw) / base : null;
+}
+const times = (x) => "×" + FMT.sig2.format(x);
 function buildPeriods() {
   const d = S.data;
   const anchor = d.generated_at.slice(0, 10);
@@ -372,22 +391,57 @@ function barName(key, n, threshold = MIN_N) {
     n < threshold ? el("small", { text: `n=${n}` }) : null);
 }
 
+// Saillance : en part (ce que chacun consacre à l'écologie) ou en volume (l'écologie dans l'ensemble des tweets)
 function renderSaillance(box, stats) {
   box.replaceChildren();
   if (!stats.length) { box.append(el("p", { class: "empty", text: t("empty_period") })); setTable("saillance", [], []); return; }
-  const max = Math.max(...stats.map((s) => s.eco / s.n), 0.0001);
+  const volume = S.salMode === "volume";
+  if (volume) box.append(el("div", { class: "legend" },
+    el("span", { class: "key" }, el("span", { class: "swatch", style: "background:var(--accent)" }), t("th_eco_tweets")),
+    el("span", { class: "key" }, el("span", { class: "swatch", style: "background:var(--neutral-mark)" }), t("other_tweets"))));
+  const rows = volume ? [...stats].sort((a, b) => b.n - a.n) : stats;
+  const max = volume ? Math.max(...rows.map((s) => s.n), 1) : Math.max(...rows.map((s) => s.eco / s.n), 0.0001);
   const grid = el("div", { class: "bars" });
-  for (const s of stats) {
+  for (const s of rows) {
     const share = s.eco / s.n, focus = S.focus === s.key, dim = S.focus && !focus;
     const track = el("div", { class: "bar-track", "aria-label": t("aria_share", { name: candName(s.key), v: pct(share), eco: num(s.eco), n: num(s.n) }) },
-      el("div", { class: "bar" + (dim ? " dim" : ""), style: `width:${(share / max) * 80}%` }), el("span", { class: "bar-value", text: pct(share) }));
+      volume ? el("div", { class: "stackbar" + (dim ? " dim" : ""), style: `width:${(s.n / max) * 80}%` }, el("span", { class: "eco", style: `width:${share * 100}%` }))
+        : el("div", { class: "bar" + (dim ? " dim" : ""), style: `width:${(share / max) * 80}%` }),
+      el("span", { class: "bar-value", text: volume ? t("vol_value", { eco: num(s.eco), n: num(s.n) }) : pct(share) }));
     hoverable(track, () => ({ title: candName(s.key), rows: [{ value: pct(share), label: t("tt_eco_share") }, { value: num(s.eco), label: t("tt_eco_of", { n: num(s.n) }) }],
       note: s.n < MIN_N ? t("fragile_n", { n: MIN_N }) : null }));
     grid.append(el("div", { class: "bar-row" + (focus ? " is-focus" : "") }, barName(s.key, s.n), track));
   }
   box.append(grid);
   setTable("saillance", [{ label: t("th_candidate") }, { label: t("th_tweets"), num: true }, { label: t("th_eco_tweets"), num: true }, { label: t("th_share"), num: true }],
-    stats.map((s) => [candName(s.key), num(s.n), num(s.eco), pct(s.eco / s.n)]));
+    rows.map((s) => [candName(s.key), num(s.n), num(s.eco), pct(s.eco / s.n)]));
+}
+
+// Engagement relatif des tweets écologie, par candidat et par registre (échelle logarithmique centrée sur ×1)
+function renderEngagement(box, tweets) {
+  box.replaceChildren();
+  const eco = tweets.filter((tw) => tw.e && relEng(tw) !== null);
+  if (!eco.length) { box.append(el("p", { class: "empty", text: S.engBase.size ? t("eng_empty") : t("eng_pending") })); setTable("engagement", [], []); return; }
+  const group = (list, keyOf) => { const m = new Map(); for (const tw of list) { const k = keyOf(tw); if (!m.has(k)) m.set(k, []); m.get(k).push(relEng(tw)); } return m; };
+  const cand = [...group(eco, (tw) => tw.c)].filter(([, v]) => v.length >= 3).map(([k, v]) => ({ key: k, n: v.length, v: median(v) })).sort((a, b) => b.v - a.v);
+  const reg = V("registre").options.map((o) => ({ key: o.key, list: eco.filter((tw) => tw.registre === o.key).map(relEng) })).filter((r) => r.list.length >= 3)
+    .map((r) => ({ key: r.key, n: r.list.length, v: median(r.list) }));
+  const LIM = 2; // de ×1/4 à ×4
+  const pos = (v) => 50 + (clamp(Math.log2(Math.max(v, 1e-3)), -LIM, LIM) / LIM) * 46;
+  const row = (name, r, isCand) => {
+    const track = el("div", { class: "log-track" + (isCand && S.focus && S.focus !== r.key ? " dimmed" : ""), "aria-label": t("eng_aria", { name: isCand ? candName(r.key) : name, v: times(r.v) }) },
+      el("span", { class: "log-dot" + (r.v >= 1 ? " up" : " down"), style: `left:${pos(r.v)}%` }),
+      el("span", { class: "seg-label", style: r.v >= 1 ? `left:${pos(r.v) + 2}%` : `right:${100 - pos(r.v) + 2}%`, text: times(r.v) }));
+    hoverable(track, () => ({ title: isCand ? candName(r.key) : name, rows: [{ value: times(r.v), label: t("eng_tt_median") }, { value: num(r.n), label: t("eng_tt_n") }],
+      note: r.n < MIN_N ? t("fragile_eco", { n: MIN_N }) : null }));
+    return el("div", { class: "bar-row" + (isCand && S.focus === r.key ? " is-focus" : "") }, isCand ? barName(r.key, r.n) : el("div", { class: "bar-name", text: name }), track);
+  };
+  const axis = () => el("div", { class: "div-axis" }, el("span"), el("div", { class: "div-axis-inner" }, el("span", { text: t("eng_axis_less") }), el("span", { text: "×1" }), el("span", { text: t("eng_axis_more") })));
+  box.append(el("div", { class: "bars" }, cand.map((r) => row(null, r, true))), axis());
+  if (reg.length) box.append(el("h3", { class: "block-sub", text: t("eng_by_register") }), el("div", { class: "bars" }, reg.map((r) => row(optLabel("registre", r.key), r, false))), axis());
+  box.append(el("p", { class: "note-small", text: t("eng_note", { n: ENG_MIN }) }));
+  setTable("engagement", [{ label: t("th_candidate") }, { label: t("eng_th_n"), num: true }, { label: t("eng_th_median"), num: true }],
+    [...cand.map((r) => [candName(r.key), num(r.n), times(r.v)]), ...reg.map((r) => [optLabel("registre", r.key), num(r.n), times(r.v)])]);
 }
 
 function renderPosition(box, stats) {
@@ -434,28 +488,58 @@ function weekly(tweets) {
   for (const tw of tweets) { const w = weekStart(tw.d); const s = m.get(w) || { n: 0, eco: 0 }; s.n++; s.eco += tw.e; m.set(w, s); }
   return m;
 }
+// Semaines continues entre la première et la dernière semaine observées
+function weekRange(weeks) {
+  const full = [];
+  for (let d = parseDay(weeks[0]); isoDay(d) <= weeks[weeks.length - 1]; d.setUTCDate(d.getUTCDate() + 7)) full.push(isoDay(d));
+  return full;
+}
+const EVO_MIN_WEEK = 3; // tweets d'un candidat dans la semaine pour entrer dans la dispersion
 function renderEvolution(box, legend, tweets) {
   box.replaceChildren();
   if (!tweets.length) { legend.replaceChildren(); box.append(el("p", { class: "empty", text: t("empty_period") })); setTable("evolution", [], []); return; }
   const all = weekly(tweets);
-  const weeks = [...all.keys()].sort();
-  const full = [];
-  for (let d = parseDay(weeks[0]); isoDay(d) <= weeks[weeks.length - 1]; d.setUTCDate(d.getUTCDate() + 7)) full.push(isoDay(d));
+  const full = weekRange([...all.keys()].sort());
+  const perCand = new Map();
+  for (const k of new Set(tweets.map((tw) => tw.c))) perCand.set(k, weekly(tweets.filter((tw) => tw.c === k)));
+  if (S.evoMode === "candidats") { legend.replaceChildren(); renderEvolutionGrid(box, full, all, perCand); return; }
+  // Dispersion : moitié centrale des candidats (1er au 3e quartile) de chaque semaine
+  const band = new Map();
+  for (const w of full) {
+    const shares = [...perCand].map(([k, m]) => ({ k, v: m.get(w) })).filter((x) => x.v && x.v.n >= EVO_MIN_WEEK).map((x) => ({ k: x.k, s: x.v.eco / x.v.n }));
+    if (shares.length >= 3) { const v = shares.map((x) => x.s); const top = shares.reduce((a, b) => (b.s > a.s ? b : a)); band.set(w, { lo: quantile(v, 0.25), hi: quantile(v, 0.75), n: shares.length, top }); }
+  }
   const series = [{ name: S.bloc ? t("series_bloc") : t("series_all"), data: all, color: S.focus ? "var(--muted)" : "var(--accent)" }];
-  if (S.focus) series.push({ name: candName(S.focus), data: weekly(tweets.filter((tw) => tw.c === S.focus)), color: "var(--accent)" });
-  legend.replaceChildren(...(series.length > 1 ? series.map((s) => el("span", { class: "key" }, el("span", { class: "linekey", style: `background:${s.color}` }), s.name)) : []));
-  const W = Math.max(320, box.clientWidth || 640), H = 280, m = { t: 22, r: 16, b: 28, l: 44 };
-  const iw = W - m.l - m.r, ih = H - m.t - m.b;
-  const values = series.flatMap((s) => full.map((w) => s.data.get(w)).filter(Boolean).map((v) => v.eco / v.n));
-  const ymax = [0.04, 0.08, 0.12, 0.2, 0.4, 0.6, 0.8, 1].find((s) => s >= Math.max(...values, 0.01) * 1.08) || 1;
+  if (S.focus) series.push({ name: candName(S.focus), data: perCand.get(S.focus) || new Map(), color: "var(--accent)" });
+  legend.replaceChildren(
+    ...series.map((s) => el("span", { class: "key" }, el("span", { class: "linekey", style: `background:${s.color}` }), s.name)),
+    band.size ? el("span", { class: "key" }, el("span", { class: "swatch band-key" }), t("evo_band")) : null,
+    el("span", { class: "key" }, el("span", { class: "swatch", style: "background:var(--neutral-mark)" }), t("evo_volume")));
+  const W = Math.max(320, box.clientWidth || 640), VOL = 46, H = 300 + VOL, m = { t: 22, r: 16, b: 28, l: 44 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b - VOL - 10;
+  const values = [...series.flatMap((s) => full.map((w) => s.data.get(w)).filter(Boolean).map((v) => v.eco / v.n)), ...[...band.values()].map((b) => b.hi)];
+  const ymax = [0.04, 0.08, 0.12, 0.2, 0.3, 0.4, 0.6, 0.8, 1].find((s) => s >= Math.max(...values, 0.01) * 1.08) || 1;
   const x = (i) => m.l + (full.length === 1 ? iw / 2 : (i / (full.length - 1)) * iw);
-  const y = (v) => m.t + ih - (v / ymax) * ih;
+  const y = (v) => m.t + ih - (Math.min(v, ymax) / ymax) * ih;
   const root = svg("svg", { class: "line-chart", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": t("evo_aria") });
   for (let i = 0; i <= 4; i++) {
     const v = (ymax * i) / 4;
     root.append(svg("line", { class: i === 0 ? "base-line" : "grid-line", x1: m.l, x2: W - m.r, y1: y(v), y2: y(v) }));
     const tx = svg("text", { class: "axis-text", x: m.l - 8, y: y(v) + 4, "text-anchor": "end" }); tx.textContent = pct(v, 0); root.append(tx);
   }
+  // bande de dispersion, interrompue là où moins de trois candidats ont assez de tweets
+  let run = [];
+  const flush = () => { if (run.length > 1) root.append(svg("path", { class: "band", d: "M" + run.map(([i, b]) => `${x(i).toFixed(1)},${y(b.hi).toFixed(1)}`).join("L") + "L" + [...run].reverse().map(([i, b]) => `${x(i).toFixed(1)},${y(b.lo).toFixed(1)}`).join("L") + "Z" })); run = []; };
+  full.forEach((w, i) => { const b = band.get(w); if (b) run.push([i, b]); else flush(); });
+  flush();
+  // volume hebdomadaire sous la courbe : tous les tweets, et la part écologie en couleur
+  const vTop = m.t + ih + 10, vmax = Math.max(...full.map((w) => (all.get(w) || { n: 0 }).n), 1), bw = Math.max(2, Math.min(18, (iw / full.length) * 0.7));
+  full.forEach((w, i) => {
+    const v = all.get(w); if (!v) return;
+    const hAll = (v.n / vmax) * VOL, hEco = (v.eco / vmax) * VOL;
+    root.append(svg("rect", { class: "vol-all", x: x(i) - bw / 2, y: vTop + VOL - hAll, width: bw, height: hAll, rx: 1.5 }),
+      svg("rect", { class: "vol-eco", x: x(i) - bw / 2, y: vTop + VOL - hEco, width: bw, height: hEco, rx: 1.5 }));
+  });
   const every = Math.max(1, Math.ceil(full.length / Math.floor(iw / 70)));
   full.forEach((w, i) => { if (i % every) return; const tx = svg("text", { class: "axis-text", x: x(i), y: H - 8, "text-anchor": "middle" }); tx.textContent = fmtShort(w); root.append(tx); });
   let lastX = -1e9;
@@ -477,20 +561,49 @@ function renderEvolution(box, legend, tweets) {
     const right = e.px > W - 130;
     const tx = svg("text", { class: "end-label", x: right ? e.px - 8 : e.px + 8, y: e.py - 8, "text-anchor": right ? "end" : "start" }); tx.textContent = pct(e.v.eco / e.v.n, 0); root.append(tx);
   }
-  const cross = svg("line", { class: "crosshair", y1: m.t, y2: m.t + ih, visibility: "hidden" });
-  const hit = svg("rect", { x: m.l, y: m.t, width: iw, height: ih, fill: "transparent", tabindex: 0 });
+  const cross = svg("line", { class: "crosshair", y1: m.t, y2: vTop + VOL, visibility: "hidden" });
+  const hit = svg("rect", { x: m.l, y: m.t, width: iw, height: vTop + VOL - m.t, fill: "transparent", tabindex: 0 });
   root.append(cross, hit);
-  const at = (i) => { cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible"); const w = full[i];
-    return { title: t("week_of", { date: fmtDay(w) }), rows: series.map((s) => { const v = s.data.get(w); return { value: v ? pct(v.eco / v.n) : "–", label: v ? `${s.name} (${v.eco}/${v.n})` : t("no_tweet_series", { name: s.name }), key: s.color }; }) }; };
+  const at = (i) => {
+    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
+    const w = full[i], b = band.get(w), v = all.get(w);
+    return { title: t("week_of", { date: fmtDay(w) }),
+      rows: [...series.map((s) => { const sv = s.data.get(w); return { value: sv ? pct(sv.eco / sv.n) : "–", label: sv ? `${s.name} (${sv.eco}/${sv.n})` : t("no_tweet_series", { name: s.name }), key: s.color }; }),
+        ...(b ? [{ value: `${pct(b.lo, 0)} – ${pct(b.hi, 0)}`, label: t("evo_tt_band", { n: b.n }), key: "var(--seq-1)", keyShape: "swatch" }] : [])],
+      note: [b ? t("evo_tt_top", { name: candName(b.top.k), v: pct(b.top.s, 0) }) : null, v ? t("evo_tt_volume", { n: num(v.n), eco: num(v.eco) }) : null].filter(Boolean).join(" · ") };
+  };
   let cur = full.length - 1;
-  hit.addEventListener("pointermove", (e) => { const r = root.getBoundingClientRect(); cur = Math.max(0, Math.min(full.length - 1, Math.round(((((e.clientX - r.left) / r.width) * W - m.l) / iw) * (full.length - 1)))); const b = at(cur); showTip(e, b.title, b.rows); });
+  hit.addEventListener("pointermove", (e) => { const r = root.getBoundingClientRect(); cur = Math.max(0, Math.min(full.length - 1, Math.round(((((e.clientX - r.left) / r.width) * W - m.l) / iw) * (full.length - 1)))); const b = at(cur); showTip(e, b.title, b.rows, b.note); });
   hit.addEventListener("pointerleave", () => { hideTip(); cross.setAttribute("visibility", "hidden"); });
-  hit.addEventListener("focus", (e) => { const b = at(cur); showTip(e, b.title, b.rows); });
+  hit.addEventListener("focus", (e) => { const b = at(cur); showTip(e, b.title, b.rows, b.note); });
   hit.addEventListener("blur", () => { hideTip(); cross.setAttribute("visibility", "hidden"); });
-  hit.addEventListener("keydown", (e) => { if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return; e.preventDefault(); cur = Math.max(0, Math.min(full.length - 1, cur + (e.key === "ArrowRight" ? 1 : -1))); const b = at(cur); showTip(hit, b.title, b.rows); });
+  hit.addEventListener("keydown", (e) => { if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return; e.preventDefault(); cur = Math.max(0, Math.min(full.length - 1, cur + (e.key === "ArrowRight" ? 1 : -1))); const b = at(cur); showTip(hit, b.title, b.rows, b.note); });
   box.append(root);
-  setTable("evolution", [{ label: t("th_week") }, ...series.flatMap((s) => [{ label: t("th_series_tweets", { name: s.name }), num: true }, { label: t("th_series_share"), num: true }])],
-    full.map((w) => [fmtDay(w), ...series.flatMap((s) => { const v = s.data.get(w); return v ? [num(v.n), pct(v.eco / v.n)] : ["0", "–"]; })]));
+  setTable("evolution", [{ label: t("th_week") }, ...series.flatMap((s) => [{ label: t("th_series_tweets", { name: s.name }), num: true }, { label: t("th_series_share"), num: true }]),
+    { label: t("th_band"), num: true }],
+    full.map((w) => { const b = band.get(w); return [fmtDay(w), ...series.flatMap((s) => { const v = s.data.get(w); return v ? [num(v.n), pct(v.eco / v.n)] : ["0", "–"]; }),
+      b ? `${pct(b.lo, 0)} – ${pct(b.hi, 0)}` : "–"]; }));
+}
+// Petits multiples : une courbe par candidat, sur une échelle commune, avec l'ensemble en gris
+function renderEvolutionGrid(box, full, all, perCand) {
+  const rows = [...perCand].map(([k, m]) => { let n = 0, eco = 0; for (const v of m.values()) { n += v.n; eco += v.eco; } return { k, m, n, eco }; })
+    .filter((r) => r.n >= MIN_N_SCALE).sort((a, b) => b.eco / b.n - a.eco / a.n);
+  const pts = rows.flatMap((r) => [...r.m.values()].filter((v) => v.n >= EVO_MIN_WEEK).map((v) => v.eco / v.n));
+  const ymax = [0.1, 0.2, 0.3, 0.4, 0.6, 0.8, 1].find((s) => s >= Math.max(...pts, 0.02) * 1.05) || 1;
+  const W = 220, H = 74, pad = 4;
+  const x = (i) => pad + (full.length === 1 ? (W - 2 * pad) / 2 : (i / (full.length - 1)) * (W - 2 * pad));
+  const y = (v) => H - pad - (v / ymax) * (H - 2 * pad);
+  const path = (m, minN) => { let d = "", pen = false; full.forEach((w, i) => { const v = m.get(w); if (!v || v.n < minN) { pen = false; return; } d += (pen ? "L" : "M") + x(i).toFixed(1) + "," + y(v.eco / v.n).toFixed(1); pen = true; }); return d; };
+  const ref = path(all, 1);
+  box.append(el("p", { class: "note-small", text: t("evo_grid_note", { max: pct(ymax, 0), n: EVO_MIN_WEEK }) }),
+    el("div", { class: "multiples" }, rows.map((r) => {
+      const g = svg("svg", { viewBox: `0 0 ${W} ${H}`, class: "mini", role: "img", "aria-label": t("aria_share", { name: candName(r.k), v: pct(r.eco / r.n), eco: num(r.eco), n: num(r.n) }) });
+      g.append(svg("line", { class: "base-line", x1: 0, x2: W, y1: H - pad, y2: H - pad }), svg("path", { class: "series ref", d: ref }), svg("path", { class: "series", d: path(r.m, EVO_MIN_WEEK), style: "stroke:var(--accent)" }));
+      const cell = el("div", { class: "mini-cell" + (S.focus === r.k ? " is-focus" : "") }, el("div", { class: "mini-head" }, avatar(r.k, 20), el("span", { class: "nm", text: candName(r.k) }), el("span", { class: "v", text: pct(r.eco / r.n, 0) })), g);
+      hoverable(cell, () => ({ title: candName(r.k), rows: [{ value: pct(r.eco / r.n), label: t("tt_eco_share") }, { value: num(r.eco), label: t("tt_eco_of", { n: num(r.n) }) }] }));
+      return cell;
+    })));
+  setTable("evolution", [{ label: t("th_candidate") }, { label: t("th_tweets"), num: true }, { label: t("th_share"), num: true }], rows.map((r) => [candName(r.k), num(r.n), pct(r.eco / r.n)]));
 }
 
 /* Heatmap générique. rows : [{key, label, n, values:{col:share}, counts:{col:count}, avatar?}] */
@@ -639,9 +752,12 @@ function kpis(tweets) {
   const eco = tweets.filter((tw) => tw.e);
   const cri = eco.filter((tw) => tw.position === "critique_ecologie").length;
   const active = new Set(tweets.map((tw) => tw.c)).size;
-  const tile = (label, value, note, hero) => el("div", { class: "kpi" + (hero ? " hero-kpi" : "") }, el("p", { class: "label", text: label }), el("p", { class: "value", text: value }), note ? el("p", { class: "note", text: note }) : null);
+  const tile = (label, value, note, hero, extra) => el("div", { class: "kpi" + (hero ? " hero-kpi" : "") }, el("div", {}, el("p", { class: "label", text: label }), el("p", { class: "value", text: value }), note ? el("p", { class: "note", text: note }) : null), extra);
+  const share = tweets.length ? eco.length / tweets.length : 0, filled = Math.round(share * 100);
+  const waffle = tweets.length ? el("div", { class: "waffle-box" }, el("div", { class: "waffle", "aria-hidden": "true" }, Array.from({ length: 100 }, (_, i) => el("i", { class: i < filled ? "on" : null }))),
+    el("p", { class: "note", text: t("kpi_waffle", { n: num(filled) }) })) : null;
   return el("section", { class: "kpi-row", "aria-label": t("kpi_aria") },
-    tile(t("kpi_eco_share"), tweets.length ? pct(eco.length / tweets.length) : "–", t("kpi_eco_of", { eco: num(eco.length), n: num(tweets.length) }), true),
+    tile(t("kpi_eco_share"), tweets.length ? pct(share) : "–", t("kpi_eco_of", { eco: num(eco.length), n: num(tweets.length) }), true, waffle),
     tile(t("kpi_tweets"), num(tweets.length), tn("kpi_active", active)),
     tile(t("kpi_eco_tweets"), num(eco.length)),
     tile(t("kpi_critical"), eco.length ? pct(cri / eco.length) : "–", t("kpi_critical_note")));
@@ -707,7 +823,8 @@ function profileCard() {
       topStat(t("profile_device"), "procedes", "procedes"),
       topStat(t("profile_topos"), "topoi", "topoi"),
       topStat(t("profile_delay"), "retardement", "retardement"),
-      stat(t("profile_compass"), "boussole", point ? t("compass_coords", { x: signed(point.x), y: signed(point.y) }) : t("profile_not_placed"))),
+      stat(t("profile_compass"), "boussole", point ? t("compass_coords", { x: signed(point.x), y: signed(point.y) }) : t("profile_not_placed")),
+      (() => { const r = eco.map(relEng).filter((v) => v !== null); return stat(t("profile_eng"), "engagement", r.length >= 3 ? times(median(r)) : t("profile_eng_none"), r.length >= 3 ? t("profile_eng_note", { n: num(r.length) }) : null); })()),
     words.length ? el("div", { class: "profile-block" }, el("h3", { text: t("profile_words") }), el("div", { class: "chips" }, words.map(([w]) => el("span", { class: "chip lex", text: w })))) : null,
     forms.length ? el("div", { class: "profile-block" }, el("h3", { text: t("profile_formulas") }),
       el("div", { class: "chips" }, forms.map((f) => el("span", { class: "chip", text: `${f.label}${LANG === "en" && f.en ? ` (${f.en})` : ""} · ${num(f.par_candidat[c.key])}` })))) : null);
@@ -728,18 +845,23 @@ function renderApercu(panel) {
     el("div", { class: "btn-row" }, el("a", { class: "secondary-btn", href: "#jouer/situer" }, icon("play", 16), t("compass_play"))));
   const compass = card("boussole", t("compass_title"), "boussole", t("compass_sub"),
     rows.length ? el("div", { class: "compass-layout" }, wrap, side) : el("p", { class: "empty", text: t("compass_empty", { n: COMPASS_MIN }) }));
-  const sail = card("saillance", t("sal_title"), "macro", t("sal_sub"), el("div", { class: "chart" }));
+  const sail = card("saillance", t("sal_title"), "macro", S.salMode === "volume" ? t("sal_sub_volume") : t("sal_sub"),
+    el("div", { class: "controls" }, segCtrl([["part", t("sal_part")], ["volume", t("sal_volume")]], S.salMode, (k) => { S.salMode = k; render(); }, t("sal_mode"))), el("div", { class: "chart" }));
   const pos = card("position", t("pos_title"), "cadrage", t("pos_sub"), el("div", { class: "chart" }));
+  const eng = card("engagement", t("eng_title"), "engagement", t("eng_sub"), el("div", { class: "chart" }));
   const evoLegend = el("div", { class: "legend" });
-  const evo = card("evolution", t("evo_title"), null, t("evo_sub"), evoLegend, el("div", { class: "chart" }));
+  const evo = card("evolution", t("evo_title"), null, S.evoMode === "candidats" ? t("evo_sub_grid") : t("evo_sub"),
+    el("div", { class: "controls" }, segCtrl([["ensemble", t("evo_overall")], ["candidats", t("evo_by_cand")]], S.evoMode, (k) => { S.evoMode = k; render(); }, t("evo_mode"))),
+    evoLegend, el("div", { class: "chart" }));
   const heatBox = el("div", { class: "chart" });
   const tabs = el("div", { class: "tabs controls", role: "tablist" }, [["themes", t("heat_themes")], ["cadrage", t("heat_frames")]].map(([k, label]) =>
     el("button", { class: "tab", type: "button", role: "tab", "aria-selected": String(S.apercuHeat === k), text: label, onclick: () => { S.apercuHeat = k; render(); } })));
   const heat = card("apercu-heat", t("heat_title"), S.apercuHeat === "themes" ? "macro" : "cadrage", t("heat_sub"), tabs, heatBox);
-  panel.append(compass, sail, pos, evo, heat);
+  panel.append(compass, sail, pos, eng, evo, heat);
   if (wrap) { drawCompass(wrap, rows, { interactive: true }); compassTable("boussole", rows); } else setTable("boussole", [], []);
   renderSaillance(sail.querySelector(".chart"), stats);
   renderPosition(pos.querySelector(".chart"), stats);
+  renderEngagement(eng.querySelector(".chart"), tweets);
   renderEvolution(evo.querySelector(".chart"), evoLegend, tweets);
   const d = distribution(stats, S.apercuHeat, true);
   renderHeat(heatBox, "apercu-heat", d.rows, d.cols, { empty: t("empty_eco_period"), note: S.apercuHeat === "themes" ? t("multi_themes") : null,
@@ -852,6 +974,143 @@ function renderAppropriation(panel) {
     empty: t("appro_sim_empty"), note: t("appro_sim_note") });
 }
 
+/* =================================================================== réseau */
+// Graphe biparti candidats – formules (toute l'étude) ou candidats – thèmes (période et famille choisies)
+function networkData(mode) {
+  const nodes = new Map(), edges = [];
+  const node = (id, props) => { if (!nodes.has(id)) nodes.set(id, { id, w: 0, ...props }); return nodes.get(id); };
+  if (mode === "formules") {
+    for (const f of ((S.data.lexique || {}).formules || []).filter((x) => x.total > 0)) {
+      for (const [k, n] of Object.entries(f.par_candidat || {})) {
+        if (!S.cand.has(k)) continue;
+        node("c:" + k, { type: "cand", key: k, label: candName(k) }).w += n;
+        node("f:" + f.key, { type: "term", label: LANG === "en" && f.en ? f.en : f.label.replace(/[«»]/g, "").trim(), title: f.label }).w += n;
+        edges.push({ s: "c:" + k, t: "f:" + f.key, w: n });
+      }
+    }
+  } else {
+    for (const s of byCandidate(filtered())) {
+      const eco = s.tweets.filter((tw) => tw.e);
+      for (const o of V("themes").options) {
+        const n = eco.filter((tw) => tw.themes.includes(o.key)).length;
+        // seuls les thèmes qui pèsent dans le discours du candidat : au moins 2 tweets et 10 % de ses tweets écologie
+        if (n < Math.max(2, 0.1 * eco.length)) continue;
+        node("c:" + s.key, { type: "cand", key: s.key, label: candName(s.key) }).w += n;
+        node("t:" + o.key, { type: "term", label: L(o, "label") }).w += n;
+        edges.push({ s: "c:" + s.key, t: "t:" + o.key, w: n });
+      }
+    }
+  }
+  return { nodes: [...nodes.values()], edges };
+}
+// Disposition à ressorts (Fruchterman et Reingold), puis écartement des étiquettes qui se chevauchent
+function layoutNetwork(nodes, edges, W, H) {
+  const at = new Map(nodes.map((n, i) => [n.id, i]));
+  const cands = nodes.filter((n) => n.type === "cand"), terms = nodes.filter((n) => n.type === "term");
+  cands.forEach((n, i) => { const a = (2 * Math.PI * i) / cands.length; n.x = W / 2 + Math.cos(a) * W * 0.38; n.y = H / 2 + Math.sin(a) * H * 0.38; });
+  terms.forEach((n, i) => { const a = (2 * Math.PI * i) / terms.length + 0.3; n.x = W / 2 + Math.cos(a) * W * 0.16; n.y = H / 2 + Math.sin(a) * H * 0.16; });
+  const k = Math.sqrt((W * H) / Math.max(nodes.length, 1)) * 0.8, maxW = Math.max(...edges.map((e) => e.w), 1);
+  let temp = W / 6;
+  for (let it = 0; it < 350; it++) {
+    const dx = new Float64Array(nodes.length), dy = new Float64Array(nodes.length);
+    for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+      const ex = nodes[i].x - nodes[j].x, ey = nodes[i].y - nodes[j].y, d = Math.max(1, Math.hypot(ex, ey)), f = (k * k) / d;
+      dx[i] += (ex / d) * f; dy[i] += (ey / d) * f; dx[j] -= (ex / d) * f; dy[j] -= (ey / d) * f;
+    }
+    for (const e of edges) {
+      const i = at.get(e.s), j = at.get(e.t), ex = nodes[i].x - nodes[j].x, ey = nodes[i].y - nodes[j].y, d = Math.max(1, Math.hypot(ex, ey));
+      const f = ((d * d) / k) * (0.4 + e.w / maxW);
+      dx[i] -= (ex / d) * f; dy[i] -= (ey / d) * f; dx[j] += (ex / d) * f; dy[j] += (ey / d) * f;
+    }
+    nodes.forEach((n, i) => {
+      dx[i] -= (n.x - W / 2) * 0.05 * k / 10; dy[i] -= (n.y - H / 2) * 0.05 * k / 10;
+      const d = Math.max(1, Math.hypot(dx[i], dy[i])), step = Math.min(d, temp);
+      n.x = clamp(n.x + (dx[i] / d) * step, n.r, W - n.r); n.y = clamp(n.y + (dy[i] / d) * step, 16, H - 16);
+    });
+    temp *= 0.985;
+  }
+  for (let it = 0; it < 80; it++) {
+    let moved = false;
+    for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+      const a = nodes[i], b = nodes[j], ox = (a.r + b.r) - Math.abs(a.x - b.x), oy = (a.h + b.h) / 2 + 2 - Math.abs(a.y - b.y);
+      if (ox <= 0 || oy <= 0) continue;
+      moved = true;
+      if (ox < oy) { const s = (a.x < b.x ? -1 : 1) * ox / 2; a.x += s; b.x -= s; } else { const s = (a.y < b.y ? -1 : 1) * oy / 2; a.y += s; b.y -= s; }
+    }
+    nodes.forEach((n) => { n.x = clamp(n.x, n.r, W - n.r); n.y = clamp(n.y, n.h / 2, H - n.h / 2); });
+    if (!moved) break;
+  }
+}
+const xmlEsc = (x) => String(x).replace(/[<>&"']/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;" })[c]);
+// Fichier GEXF pour Gephi, avec les positions de la version légère
+function gexf(nodes, edges, mode) {
+  const attrs = (n) => `<attvalues><attvalue for="0" value="${n.type === "cand" ? "candidat" : mode}"/><attvalue for="1" value="${xmlEsc(n.type === "cand" ? blocLabel((S.cand.get(n.key) || {}).bloc) : "")}"/></attvalues>`;
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<gexf xmlns="http://www.gexf.net/1.2draft" xmlns:viz="http://www.gexf.net/1.2draft/viz" version="1.2">
+  <meta lastmodifieddate="${S.data.generated_at.slice(0, 10)}"><creator>${xmlEsc(t("brand"))}</creator><description>${xmlEsc(t(mode === "formules" ? "net_desc_formules" : "net_desc_themes"))}</description></meta>
+  <graph mode="static" defaultedgetype="undirected">
+    <attributes class="node"><attribute id="0" title="type" type="string"/><attribute id="1" title="famille" type="string"/></attributes>
+    <nodes>
+${nodes.map((n) => `      <node id="${xmlEsc(n.id)}" label="${xmlEsc(n.label)}">${attrs(n)}<viz:size value="${(4 + Math.sqrt(n.w) * 2).toFixed(1)}"/><viz:position x="${n.x.toFixed(1)}" y="${(-n.y).toFixed(1)}" z="0"/></node>`).join("\n")}
+    </nodes>
+    <edges>
+${edges.map((e, i) => `      <edge id="${i}" source="${xmlEsc(e.s)}" target="${xmlEsc(e.t)}" weight="${e.w}"/>`).join("\n")}
+    </edges>
+  </graph>
+</gexf>
+`;
+}
+function renderNetwork(box) {
+  box.replaceChildren();
+  const { nodes, edges } = networkData(S.netMode);
+  if (edges.length < 2) { box.append(el("p", { class: "empty", text: t("net_empty") })); setTable("reseau", [], []); return; }
+  const W = Math.max(300, box.clientWidth || 700), H = Math.round(W < 600 ? W * 1.15 : Math.min(600, W * 0.62)), narrow = W < 600;
+  const maxW = Math.max(...nodes.filter((n) => n.type === "term").map((n) => n.w), 1);
+  for (const n of nodes) {
+    if (n.type === "cand") { n.size = narrow ? 26 : 34; n.r = n.size / 2 + 2; n.h = n.size + 4; }
+    else { n.font = (narrow ? 10.5 : 12) + Math.sqrt(n.w / maxW) * (narrow ? 3 : 5); n.r = (n.label.length * n.font * 0.56) / 2 + 12; n.h = n.font + 10; }
+  }
+  layoutNetwork(nodes, edges, W, H);
+  const at = new Map(nodes.map((n) => [n.id, n])), maxE = Math.max(...edges.map((e) => e.w), 1);
+  const lines = svg("svg", { class: "net-edges", viewBox: `0 0 ${W} ${H}`, "aria-hidden": "true" });
+  const lineOf = edges.map((e) => { const a = at.get(e.s), b = at.get(e.t); const l = svg("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, "stroke-width": (0.8 + (e.w / maxE) * 5).toFixed(2) }); lines.append(l); return l; });
+  const wrap = el("div", { class: "net", style: `height:${H}px`, role: "group", "aria-label": t("net_aria") }, lines);
+  const neighbours = (id) => edges.map((e, i) => [e, i]).filter(([e]) => e.s === id || e.t === id);
+  const els = new Map();
+  const highlight = (id) => {
+    wrap.classList.toggle("hovering", !!id);
+    for (const [nid, node] of els) node.classList.remove("hl");
+    lineOf.forEach((l) => l.classList.remove("hl"));
+    if (!id) return;
+    els.get(id).classList.add("hl");
+    for (const [e, i] of neighbours(id)) { lineOf[i].classList.add("hl"); els.get(e.s === id ? e.t : e.s).classList.add("hl"); }
+  };
+  for (const n of nodes) {
+    const style = `left:${n.x.toFixed(1)}px;top:${n.y.toFixed(1)}px` + (n.type === "term" ? `;font-size:${n.font.toFixed(1)}px` : "");
+    const node = n.type === "cand"
+      ? el("button", { class: "net-node cand" + (S.focus === n.key ? " focus" : ""), type: "button", style, "aria-label": n.label, onclick: () => setFilter({ focus: S.focus === n.key ? "" : n.key }, "#reseau") }, avatar(n.key, n.size))
+      : el("span", { class: "net-node term", style, title: n.title || null }, n.label);
+    els.set(n.id, node);
+    hoverable(node, () => {
+      const links = neighbours(n.id).map(([e]) => [e.s === n.id ? e.t : e.s, e.w]).sort((a, b) => b[1] - a[1]);
+      return { title: n.label, rows: links.slice(0, 6).map(([id, w]) => ({ value: num(w), label: at.get(id).label })),
+        note: links.length > 6 ? t("net_more", { n: links.length - 6 }) : t(S.netMode === "formules" ? "net_tt_formules" : "net_tt_themes") };
+    });
+    node.addEventListener("pointerenter", () => highlight(n.id));
+    node.addEventListener("focus", () => highlight(n.id));
+    node.addEventListener("pointerleave", () => highlight(null));
+    node.addEventListener("blur", () => highlight(null));
+    wrap.append(node);
+  }
+  if (S.netUrl) URL.revokeObjectURL(S.netUrl);
+  S.netUrl = URL.createObjectURL(new Blob([gexf(nodes, edges, S.netMode)], { type: "application/gexf+xml" }));
+  box.append(wrap, el("div", { class: "btn-row" },
+    el("a", { class: "ghost-btn", href: S.netUrl, download: `reseau-${S.netMode}-${S.data.generated_at.slice(0, 10)}.gexf` }, t("net_download"))),
+    el("p", { class: "note-small", text: t(S.netMode === "formules" ? "net_note_formules" : "net_note_themes") }));
+  setTable("reseau", [{ label: t("net_th_from") }, { label: t("net_th_to") }, { label: t("th_tweets"), num: true }],
+    [...edges].sort((a, b) => b.w - a.w).map((e) => [at.get(e.s).label, at.get(e.t).label, num(e.w)]));
+}
+
 /* =================================================================== onglet Mots */
 function renderMots(panel) {
   const lx = S.data.lexique;
@@ -881,6 +1140,11 @@ function renderMots(panel) {
     fBox.append(heat);
     renderHeat(heat, "formules", rows, used.map((f) => ({ key: f.key, label: LANG === "en" && f.en ? f.en : f.label.replace(/[«»]/g, "").trim(), title: f.label })), { format: (v) => num(v), min0: "0", unit: t("uses") });
   }
+  const net = card("reseau", t("net_title"), "reseau", t("net_sub"),
+    el("div", { class: "controls" }, segCtrl([["formules", t("net_formules")], ["themes", t("net_themes")]], S.netMode, (k) => { S.netMode = k; render(); }, t("net_mode"))),
+    el("div", { class: "chart" }));
+  panel.append(net);
+  renderNetwork(net.querySelector(".chart"));
   const groups = S.mots.mode === "blocs" ? lx.blocs : lx.candidats;
   const keys = Object.keys(groups).filter((k) => groups[k].length);
   if (!keys.includes(S.mots.who)) S.mots.who = S.mots.mode === "candidats" && keys.includes(S.focus) ? S.focus : keys[0];
@@ -895,14 +1159,47 @@ function renderMots(panel) {
   const words = groups[S.mots.who] || [];
   if (!words.length) { kwBox.append(el("p", { class: "empty", text: t("lex_empty") })); setTable("lexique", [], []); return; }
   const mx = words[0][2];
-  kwBox.append(el("div", { class: "kw" }, words.map(([w, n, g]) => [el("span", { lang: "fr", text: w }), el("div", { class: "b", style: `width:${(g / mx) * 100}%` }), el("span", { class: "v", text: tn("n_uses", n) })])));
-  setTable("lexique", [{ label: t("th_word") }, { label: t("th_uses"), num: true }, { label: "G²", num: true }], words.map(([w, n, g]) => [w, num(n), FMT.p1.format(g)]));
+  kwBox.append(el("div", { class: "kw" }, words.map(([w, n, g, docs]) => [el("span", { lang: "fr", text: w }), el("div", { class: "b", style: `width:${(g / mx) * 100}%` }),
+    el("span", { class: "v", text: docs ? `${tn("n_uses", n)} · ${tn("n_in_tweets", docs)}` : tn("n_uses", n) })])));
+  const foreign = (lx.corpus || {}).tweets_autre_langue;
+  kwBox.append(el("p", { class: "note-small", text: [t("lex_rules"), foreign ? tn("lex_foreign", foreign) : null].filter(Boolean).join(" ") }));
+  setTable("lexique", [{ label: t("th_word") }, { label: t("th_uses"), num: true }, { label: t("th_in_tweets"), num: true }, { label: "G²", num: true }],
+    words.map(([w, n, g, docs]) => [w, num(n), docs ? num(docs) : "–", FMT.p1.format(g)]));
 }
 
 /* =================================================================== tweets */
 const POS_COLOR = { favorable_transition: "var(--accent)", critique_ecologie: "var(--accent-2)", neutre: "var(--neutral-mark)" };
 function chip(text, varKey, optKey, extra) {
   return el("span", { class: "chip" + (extra ? " " + extra : "") }, text, varKey ? catInfoBtn(varKey, optKey) : null);
+}
+// Même seuils que jev_client.level : la zone grise de l'écologie et les confiances sous 0,6 sont « faibles »
+const levelOf = (kind, v) => (kind === "noul" ? (v >= 0.3 && v <= 0.7 ? 0 : v > 0.1 && v < 0.9 ? 1 : 2) : v < 0.6 ? 0 : v < 0.8 ? 1 : 2);
+// Badge de confiance de Jev : niveau, détail par variable dans l'infobulle, explication dans la bulle « i »
+function confidenceBadge(tw) {
+  if (tw.cj === null || tw.cj === undefined) return null;
+  const badge = el("span", { class: `conf-badge lv${tw.cj}`, "aria-label": t("conf_aria", { level: t("conf_" + LEVELS[tw.cj]) }) },
+    el("span", { class: "dot", style: `background:${LEVEL_COLOR[tw.cj]}` }), t("conf_label", { level: t("conf_" + LEVELS[tw.cj]) }));
+  hoverable(badge, () => ({ title: t("conf_tt_title"),
+    rows: [...(tw.p !== null && tw.p !== undefined ? [{ value: f2(tw.p), label: t("conf_tt_eco"), key: LEVEL_COLOR[levelOf("noul", tw.p)], keyShape: "swatch" }] : []),
+      ...Object.entries(tw.cf || {}).map(([short, v]) => ({ value: f2(v), label: varLabel((S.data.codebook.variables.find((x) => x.short === short) || {}).key),
+        key: LEVEL_COLOR[levelOf("choice", v)], keyShape: "swatch" }))],
+    note: tw.s === "c" ? t("conf_tt_claude") : tw.cj === 0 ? t("conf_tt_low") : null }));
+  return el("span", { class: "who-inline" }, badge, infoBtn("confiance"));
+}
+// Ligne d'engagement : métriques à 48 h (ou à la collecte), engagement relatif, réactualisation éventuelle
+function engagementRow(tw) {
+  const parts = [["l", "n_likes"], ["rt", "n_reposts"], ["rp", "n_replies"], ["qt", "n_quotes"], ["bm", "n_bookmarks"]]
+    .map(([k, key]) => tn(key, tw[k] || 0));
+  if (tw.vw !== null && tw.vw !== undefined) parts.push(tn("n_views", tw.vw));
+  const rel = relEng(tw);
+  const maj = (S.data.maj || {})[tw.i];
+  const line = el("span", { class: "eng-line" }, parts.join(" · "));
+  hoverable(line, () => ({ title: tw.ma !== null && tw.ma !== undefined ? t("eng_tt_h48", { h: num(tw.ma) }) : t("eng_tt_collect"),
+    rows: [{ value: num(interactions(tw)), label: t("eng_tt_inter") }, ...(rel !== null ? [{ value: times(rel), label: t("eng_tt_rel", { name: candName(tw.c) }) }] : [])],
+    note: maj ? t("eng_tt_maj", { date: fmtDay(maj[0]), likes: num(maj[1] || 0), views: maj[2] === null || maj[2] === undefined ? "–" : num(maj[2]) }) : null }));
+  return el("div", { class: "tweet-eng" }, line,
+    rel !== null ? el("span", { class: "rel-badge" + (rel >= 1.5 ? " up" : rel <= 0.67 ? " down" : ""), title: t("eng_rel_title", { name: candName(tw.c) }) }, times(rel)) : null,
+    infoBtn("engagement"));
 }
 function tweetItem(tw) {
   const c = S.cand.get(tw.c) || { name: tw.c };
@@ -923,10 +1220,12 @@ function tweetItem(tw) {
   draw();
   const foot = [t("coded_by", { engine: tw.s === "c" ? "Claude" : "Jev" }), tw.p !== null && tw.p !== undefined ? t("p_eco", { p: f2(tw.p) }) : null, tw.im ? t("presupposed", { x: tw.im }) : null].filter(Boolean).join(" · ");
   return el("li", { class: "tweet" },
-    el("div", { class: "tweet-head" }, avatar(tw.c, 28), el("strong", { text: c.name }), el("span", { text: fmtDay(tw.d) }), el("span", { text: tn("n_likes", tw.l || 0) }),
+    el("div", { class: "tweet-head" }, avatar(tw.c, 28), el("strong", { text: c.name }), el("span", { text: fmtDay(tw.d) }),
       LANG === "en" ? el("span", { class: "lang-tag", title: t("in_french"), text: "FR" }) : null,
       c.handle ? el("a", { href: `https://x.com/${c.handle}/status/${tw.i}`, target: "_blank", rel: "noopener", text: t("see_on_x") }) : null),
-    el("p", { class: "tweet-text", lang: "fr", text: tw.t || "" }), tw.rs ? el("p", { class: "tweet-resume", lang: "fr", text: tw.rs }) : null, chips, el("div", { class: "tweet-foot", text: foot }));
+    el("p", { class: "tweet-text", lang: "fr", text: tw.t || "" }), tw.rs ? el("p", { class: "tweet-resume", lang: "fr", text: tw.rs }) : null, chips,
+    engagementRow(tw),
+    el("div", { class: "tweet-foot" }, confidenceBadge(tw), el("span", { text: foot })));
 }
 function renderTweets(panel) {
   const x = S.x;
@@ -941,8 +1240,9 @@ function renderTweets(panel) {
     el("label", { class: "field" }, el("span", { text: t("f_position") }), sel("x-pos", optsOf("position"), x.pos, t("all_f"))),
     el("label", { class: "field" }, el("span", { text: t("f_frame") }), sel("x-cad", optsOf("cadrage"), x.cad)),
     el("label", { class: "field" }, el("span", { text: t("f_concept") }), concept),
+    el("label", { class: "field" }, el("span", { class: "who-inline" }, t("f_conf")), sel("x-conf", [2, 1, 0].map((lv) => [String(lv), t("conf_" + LEVELS[lv])]), x.conf, t("all_f"))),
     el("label", { class: "field grow" }, el("span", { text: t("f_search") }), q),
-    el("label", { class: "field" }, el("span", { text: t("f_sort") }), sel("x-sort", [["likes", t("sort_likes")]], x.sort === "likes" ? "likes" : "", t("sort_recent"))));
+    el("label", { class: "field" }, el("span", { text: t("f_sort") }), sel("x-sort", [["likes", t("sort_likes")], ["rel", t("sort_rel")], ["conf", t("sort_conf")]], x.sort === "date" ? "" : x.sort, t("sort_recent"))));
   const list = el("ol", { class: "tweet-list" });
   const more = el("button", { class: "ghost-btn", type: "button", text: t("show_more") });
   const sub = el("p", { class: "sub", role: "status" });
@@ -951,13 +1251,18 @@ function renderTweets(panel) {
   const update = () => {
     let items = filtered().filter((tw) => tw.e && tw.t && (!x.cand || tw.c === x.cand) && (!x.theme || tw.themes.includes(x.theme)) && (!x.pos || tw.position === x.pos) && (!x.cad || tw.cadrage === x.cad));
     if (x.concept) { const [vk, ok] = x.concept.split(":"); items = items.filter((tw) => (Array.isArray(tw[vk]) ? tw[vk].includes(ok) : tw[vk] === ok)); }
+    if (x.conf !== "") items = items.filter((tw) => String(tw.cj) === x.conf);
     if (x.q) { const n = x.q.toLowerCase(); items = items.filter((tw) => (tw.t || "").toLowerCase().includes(n) || (tw.rs || "").toLowerCase().includes(n)); }
-    items.sort(x.sort === "likes" ? (a, b) => b.l - a.l : (a, b) => (a.d < b.d ? 1 : a.d > b.d ? -1 : 0));
+    const byDate = (a, b) => (a.d < b.d ? 1 : a.d > b.d ? -1 : 0);
+    const sorters = { likes: (a, b) => b.l - a.l, rel: (a, b) => (relEng(b) ?? -1) - (relEng(a) ?? -1) || byDate(a, b),
+      conf: (a, b) => (a.cj ?? 3) - (b.cj ?? 3) || (Math.abs((a.p ?? 1) - 0.5) - Math.abs((b.p ?? 1) - 0.5)) };
+    items.sort(sorters[x.sort] || byDate);
     sub.textContent = tn("tweets_count", items.length);
     list.replaceChildren(...(items.length ? items.slice(0, x.shown).map(tweetItem) : [el("li", { class: "empty", text: t("tweets_none") })]));
     more.hidden = items.length <= x.shown;
   };
-  const sync = () => { Object.assign(x, { cand: $("#x-cand").value, theme: $("#x-theme").value, pos: $("#x-pos").value, cad: $("#x-cad").value, concept: $("#x-concept").value, q: $("#x-q").value.trim(), sort: $("#x-sort").value || "date", shown: 15 }); update(); };
+  const sync = () => { Object.assign(x, { cand: $("#x-cand").value, theme: $("#x-theme").value, pos: $("#x-pos").value, cad: $("#x-cad").value, concept: $("#x-concept").value,
+    conf: $("#x-conf").value, q: $("#x-q").value.trim(), sort: $("#x-sort").value || "date", shown: 15 }); update(); };
   $$("select", fields).forEach((s) => s.addEventListener("change", sync));
   q.addEventListener("input", debounce(sync, 200));
   more.addEventListener("click", () => { x.shown += 15; update(); });
@@ -980,7 +1285,32 @@ function agreementTable(ev) {
     el("thead", {}, el("tr", {}, [t("th_variable"), "n", t("th_agreement"), "Kappa", "Alpha", t("th_reading")].map((h, i) => el("th", { class: i && i < 5 ? "num" : null, text: h })))),
     el("tbody", {}, rows.map((r) => el("tr", {}, r.map((v, i) => el("td", { class: i && i < 5 ? "num" : null }, v instanceof Node ? v : String(v))))))));
 }
-const METHODE_SECTIONS = ["questions", "corpus", "moteurs", "fiabilite", "comptes", "limites", "codebook", "credits"];
+const METHODE_SECTIONS = ["questions", "corpus", "moteurs", "fiabilite", "confiance", "comptes", "limites", "codebook", "credits"];
+// Confiance de Jev : répartition des niveaux par variable, et accord avec Claude selon ce niveau
+function confidenceSection() {
+  const d = S.data, spread = d.confiance || {};
+  const keys = Object.keys(spread);
+  const box = el("div", { class: "chart" });
+  const c = card("m-confiance", t("m_conf_title"), "confiance", t("m_conf_sub"), box);
+  if (!keys.length) { box.append(el("p", { class: "empty", text: t("no_data_yet") })); return { node: c, draw: () => setTable("m-confiance", [], []) }; }
+  box.append(el("div", { class: "legend" }, LEVELS.map((lv, i) => el("span", { class: "key" }, el("span", { class: "swatch", style: `background:${LEVEL_COLOR[i]}` }), t("conf_" + lv)))),
+    el("div", { class: "bars" }, keys.map((k) => {
+      const counts = spread[k], n = counts.reduce((a, b) => a + b, 0);
+      const track = el("div", { class: "bar-track", "aria-label": t("conf_row_aria", { name: varLabel(k), low: pct(counts[0] / n, 0), mid: pct(counts[1] / n, 0), high: pct(counts[2] / n, 0) }) },
+        el("div", { class: "stack100" }, counts.map((x, i) => (x ? el("span", { style: `flex:${x};background:${LEVEL_COLOR[i]}` }) : null))));
+      hoverable(track, () => ({ title: varLabel(k), rows: counts.map((x, i) => ({ value: pct(x / n, 0), label: t("conf_" + LEVELS[i]), key: LEVEL_COLOR[i], keyShape: "swatch" })), note: tn("n_tweets", n) }));
+      return el("div", { class: "bar-row" }, el("div", { class: "bar-name", text: varLabel(k) }), track);
+    })));
+  const agree = (d.validation || {}).par_confiance;
+  if (agree && Object.keys(agree).length) {
+    const cell = (b) => (b && b.n ? `${pct(b.accord, 0)} (n=${num(b.n)})` : "–");
+    box.append(el("h3", { class: "block-sub", text: t("m_conf_agree_title") }), el("p", { class: "note-small", text: t("m_conf_agree_note") }),
+      el("div", { class: "table-view" }, el("table", {}, el("thead", {}, el("tr", {}, el("th", { text: t("th_variable") }), LEVELS.map((lv) => el("th", { class: "num", text: t("conf_" + lv) })))),
+        el("tbody", {}, Object.entries(agree).map(([k, bins]) => el("tr", {}, el("td", { text: varLabel(k) }), bins.map((b) => el("td", { class: "num", text: cell(b) }))))))));
+  } else box.append(el("p", { class: "note-small", text: t("m_conf_agree_none") }));
+  return { node: c, draw: () => setTable("m-confiance", [{ label: t("th_variable") }, ...LEVELS.map((lv) => ({ label: t("conf_" + lv), num: true }))],
+    keys.map((k) => { const n = spread[k].reduce((a, b) => a + b, 0); return [varLabel(k), ...spread[k].map((x) => pct(x / n, 0))]; })) };
+}
 function renderMethode(panel) {
   const d = S.data;
   const section = (key, ...body) => el("section", { class: "card", id: "m-" + key }, ...body);
@@ -991,7 +1321,7 @@ function renderMethode(panel) {
   parts.push(section("corpus", el("h2", { text: t("m_corpus") }), el("p", { class: "sub", text: t("m_corpus_text", { date: fmtDay(d.study.start) }) }),
     el("div", { class: "table-view" }, el("table", {}, el("thead", {}, el("tr", {}, [t("th_phase"), t("th_start"), t("th_end")].map((h) => el("th", { text: h })))),
       el("tbody", {}, (d.study.phases || []).map((p) => el("tr", {}, el("td", { text: L(p, "label") }), el("td", { text: fmtDay(p.start) }), el("td", { text: fmtDay(p.end) }))))))));
-  parts.push(el("div", { id: "m-moteurs" }, el("h2", { class: "block-title", text: t("m_moteurs") }), ...d.codebook.engines.filter((e) => e.key !== "fiabilite").map(frameworkCard)));
+  parts.push(el("div", { id: "m-moteurs" }, el("h2", { class: "block-title", text: t("m_moteurs") }), ...d.codebook.engines.filter((e) => !["fiabilite", "confiance"].includes(e.key)).map(frameworkCard)));
   const val = section("fiabilite", titleWithInfo("h2", t("m_reliability_title"), "fiabilite"));
   const v = d.validation;
   if (!v || !v.double_code || !v.double_code.n) {
@@ -1004,6 +1334,8 @@ function renderMethode(panel) {
     val.append(el("h3", { class: "block-sub", text: t("m_double", { n: num(v.double_code.n) }) }), el("p", { class: "note-small", text: t("m_double_note") }), agreementTable(v.double_code));
   }
   parts.push(val);
+  const conf = confidenceSection();
+  parts.push(conf.node);
   parts.push(section("comptes", el("h2", { text: t("m_comptes") }), el("div", { class: "table-view" }, el("table", { class: "wrap-cells" },
     el("thead", {}, el("tr", {}, [t("th_candidate"), t("th_account"), t("th_status"), t("th_last"), t("th_note")].map((h) => el("th", { text: h })))),
     el("tbody", {}, [...S.cands].sort(byName).map((c) => el("tr", {},
@@ -1024,6 +1356,7 @@ function renderMethode(panel) {
     photos.map((c) => el("li", {}, `${t("kv", { k: c.name, v: `${L(c.photo, "auteur") || t("unknown_author")}${c.photo.licence ? ", " + c.photo.licence : ""}` })}, `,
       c.photo.source ? el("a", { href: c.photo.source, target: "_blank", rel: "noopener", text: t("source") }) : null)))));
   panel.replaceChildren(...parts);
+  conf.draw();
 }
 
 /* =================================================================== jeux */

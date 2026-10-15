@@ -25,6 +25,7 @@ SITE_SRC_DIR = ROOT / "site"
 
 DATA_DIR = Path(os.environ.get("DATA_DIR") or ROOT / "data")
 RAW_TWEETS_FILE = DATA_DIR / "raw" / "tweets.jsonl"
+METRICS_FILE = DATA_DIR / "raw" / "metrics.json"          # mesures d'engagement à 48 h et réactualisations
 CLASSIFICATIONS_FILE = DATA_DIR / "classified" / "classifications.jsonl"
 GAMES_FILE = DATA_DIR / "games" / "anonymized.jsonl"
 EXPORTS_DIR = DATA_DIR / "exports"
