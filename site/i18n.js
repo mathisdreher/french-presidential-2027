@@ -552,6 +552,12 @@ window.MESSAGES = {
     qui_hint_cost: "L'indice a coûté ½ point.",
     codebook_says: "Ce que dit le livre de codes",
     heat_zero: "aucun tweet",
+    heat_stance: "Pour ou contre",
+    heat_sub_stance: "Solde des tweets écologie de chaque candidat sur chaque thème : favorables moins critiques, rapporté au nombre de tweets. Vert : plutôt favorable à l'action écologique ; orange : plutôt critique.",
+    stance_note: "Case vide : moins de 3 tweets écologie du candidat sur ce thème.",
+    stance_left: "−1 critique",
+    stance_right: "+1 favorable",
+    stance_unit: "solde favorable − critique",
   },
 
   en: {
@@ -1103,5 +1109,11 @@ window.MESSAGES = {
     qui_hint_cost: "The clue cost ½ point.",
     codebook_says: "What the codebook says",
     heat_zero: "no tweets",
+    heat_stance: "For or against",
+    heat_sub_stance: "Balance of each candidate's ecology tweets on each topic: supportive minus critical, divided by the number of tweets. Green: rather supportive of ecological action; orange: rather critical.",
+    stance_note: "Empty cell: fewer than 3 ecology tweets by the candidate on this topic.",
+    stance_left: "−1 critical",
+    stance_right: "+1 supportive",
+    stance_unit: "supportive − critical balance",
   },
 };

@@ -1,6 +1,7 @@
 /* ========================================================================== jetons
-   Valeurs de la palette de référence validée (clair et sombre). Les couleurs de données
-   (accent, accent-2, rampe séquentielle) ne servent qu'aux graphiques et aux accents d'interface. */
+   Identité commune au site et à la bande-annonce : vert forêt (l'écologie, le soutien à l'action),
+   orange brûlé (la critique), neutres légèrement teintés de vert.
+   Deux échelles de données : occurrence (blanc vers vert) et polarité (orange, neutre, vert). */
 :root {
   color-scheme: light;
   --page: #f9f9f7;
@@ -13,9 +14,9 @@
   --axis: #c3c2b7;
   --border: rgba(11, 11, 11, 0.10);
   --wash: rgba(11, 11, 11, 0.045);
-  --accent: #2a78d6;
-  --accent-ink: #1c5cab;
-  --accent-2: #eb6834;
+  --accent: #1f7a4c;
+  --accent-ink: #155c38;
+  --accent-2: #d8622b;
   --neutral-mark: #d9d8d1;
   --deemph: #cfcec7;
   --cell-empty: #f0efec;
@@ -23,12 +24,14 @@
   --good-ink: #006300;
   --warning: #fab219;
   --critical: #d03b3b;
-  --seq-0: #cde2fb; --seq-1: #9ec5f4; --seq-2: #6da7ec; --seq-3: #3987e5;
-  --seq-4: #256abf; --seq-5: #184f95; --seq-6: #0d366b;
-  /* tableaux : dégradé du rouge (faible) au vert (fort), en passant par le jaune */
-  --heat-0: #d73027; --heat-1: #f46d43; --heat-2: #fdae61; --heat-3: #fee08b; --heat-4: #a6d96a; --heat-5: #66bd63; --heat-6: #1a9850;
-  --hero-a: rgba(42, 120, 214, 0.20);
-  --hero-b: rgba(235, 104, 52, 0.13);
+  /* occurrence : du blanc au vert */
+  --seq-0: #e6f3ea; --seq-1: #c5e5cf; --seq-2: #98d0aa; --seq-3: #66b47f;
+  --seq-4: #3d9461; --seq-5: #22744a; --seq-6: #0f5232;
+  --heat-zero: #ffffff;
+  /* polarité : orange (critique, en dessous) – neutre – vert (favorable, au-dessus) */
+  --pol-0: #b54a17; --pol-1: #e07a45; --pol-2: #f2c3a3; --pol-3: #ecebe5; --pol-4: #a9d6b6; --pol-5: #4ea370; --pol-6: #1b6b42;
+  --hero-a: rgba(31, 122, 76, 0.18);
+  --hero-b: rgba(216, 98, 43, 0.13);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
   --shadow-lift: 0 2px 4px rgba(0, 0, 0, 0.05), 0 16px 40px rgba(0, 0, 0, 0.10);
   --radius: 14px;
@@ -39,11 +42,12 @@
     color-scheme: dark;
     --page: #0d0d0d; --surface: #1a1a19; --surface-2: #222220; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #95938b;
     --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.10); --wash: rgba(255, 255, 255, 0.06);
-    --accent: #3987e5; --accent-ink: #86b6ef; --accent-2: #d95926; --neutral-mark: #57574f; --deemph: #44443f; --cell-empty: #232321;
+    --accent: #3fae73; --accent-ink: #8fd6ab; --accent-2: #e2773f; --neutral-mark: #57574f; --deemph: #44443f; --cell-empty: #232321;
     --good-ink: #0ca30c;
-    --seq-0: #0d366b; --seq-1: #104281; --seq-2: #1c5cab; --seq-3: #2a78d6;
-    --seq-4: #5598e7; --seq-5: #86b6ef; --seq-6: #b7d3f6;
-    --hero-a: rgba(57, 135, 229, 0.22); --hero-b: rgba(217, 89, 38, 0.14);
+    --seq-0: #17281e; --seq-1: #1d3d2a; --seq-2: #24583a; --seq-3: #2f764d;
+    --seq-4: #439866; --seq-5: #6fbb8a; --seq-6: #a8dcb8; --heat-zero: #1c1c1b;
+    --pol-0: #f08a52; --pol-1: #b8592a; --pol-2: #5a3624; --pol-3: #2a2a28; --pol-4: #24583a; --pol-5: #3f9a64; --pol-6: #8fd6ab;
+    --hero-a: rgba(63, 174, 115, 0.18); --hero-b: rgba(226, 119, 63, 0.13);
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
     --shadow-lift: 0 2px 4px rgba(0, 0, 0, 0.35), 0 16px 40px rgba(0, 0, 0, 0.5);
   }
@@ -52,11 +56,12 @@
   color-scheme: dark;
   --page: #0d0d0d; --surface: #1a1a19; --surface-2: #222220; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #95938b;
   --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.10); --wash: rgba(255, 255, 255, 0.06);
-  --accent: #3987e5; --accent-ink: #86b6ef; --accent-2: #d95926; --neutral-mark: #57574f; --deemph: #44443f; --cell-empty: #232321;
+  --accent: #3fae73; --accent-ink: #8fd6ab; --accent-2: #e2773f; --neutral-mark: #57574f; --deemph: #44443f; --cell-empty: #232321;
   --good-ink: #0ca30c;
-  --seq-0: #0d366b; --seq-1: #104281; --seq-2: #1c5cab; --seq-3: #2a78d6;
-  --seq-4: #5598e7; --seq-5: #86b6ef; --seq-6: #b7d3f6;
-  --hero-a: rgba(57, 135, 229, 0.22); --hero-b: rgba(217, 89, 38, 0.14);
+  --seq-0: #17281e; --seq-1: #1d3d2a; --seq-2: #24583a; --seq-3: #2f764d;
+  --seq-4: #439866; --seq-5: #6fbb8a; --seq-6: #a8dcb8; --heat-zero: #1c1c1b;
+  --pol-0: #f08a52; --pol-1: #b8592a; --pol-2: #5a3624; --pol-3: #2a2a28; --pol-4: #24583a; --pol-5: #3f9a64; --pol-6: #8fd6ab;
+  --hero-a: rgba(63, 174, 115, 0.18); --hero-b: rgba(226, 119, 63, 0.13);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
   --shadow-lift: 0 2px 4px rgba(0, 0, 0, 0.35), 0 16px 40px rgba(0, 0, 0, 0.5);
 }
@@ -357,9 +362,11 @@ svg.mini .series { stroke-width: 1.8; }
 .cell:hover, .cell:focus-visible { outline: 2px solid var(--ink); }
 .cell.dim { opacity: .35; }
 .cell.selected { outline: 2px solid var(--accent); }
-.q0 { background: var(--heat-0); } .q1 { background: var(--heat-1); } .q2 { background: var(--heat-2); } .q3 { background: var(--heat-3); }
-.q4 { background: var(--heat-4); } .q5 { background: var(--heat-5); } .q6 { background: var(--heat-6); }
-.cell.zero, .scale .zero { background: var(--cell-empty); box-shadow: inset 0 0 0 1px var(--grid); }
+.q0 { background: var(--seq-0); } .q1 { background: var(--seq-1); } .q2 { background: var(--seq-2); } .q3 { background: var(--seq-3); }
+.q4 { background: var(--seq-4); } .q5 { background: var(--seq-5); } .q6 { background: var(--seq-6); }
+.p0 { background: var(--pol-0); } .p1 { background: var(--pol-1); } .p2 { background: var(--pol-2); } .p3 { background: var(--pol-3); }
+.p4 { background: var(--pol-4); } .p5 { background: var(--pol-5); } .p6 { background: var(--pol-6); }
+.cell.zero, .scale .zero { background: var(--heat-zero); box-shadow: inset 0 0 0 1px var(--grid); }
 .scale-gap { width: 10px; }
 .heat .heat-group { margin-top: 8px; padding: 2px 0; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--grid); align-self: end; }
 .scale { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -611,5 +618,5 @@ legend { padding: 0; }
   .face:hover { scale: 1; }
 }
 @media (forced-colors: active) {
-  .bar, .seg, .cell, .q0, .q1, .q2, .q3, .q4, .q5, .q6 { forced-color-adjust: none; }
+  .bar, .seg, .cell, .q0, .q1, .q2, .q3, .q4, .q5, .q6, .p0, .p1, .p2, .p3, .p4, .p5, .p6 { forced-color-adjust: none; }
 }

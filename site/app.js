@@ -629,6 +629,8 @@ function renderHeat(box, id, rows, cols, opts = {}) {
   const lo = opts.domain === "minmax" ? Math.min(...vals) : 0;
   const max = Math.max(...vals, lo + 0.0001);
   const q = (v) => (v <= lo ? 0 : Math.min(6, Math.ceil(((v - lo) / (max - lo)) * 7) - 1));
+  // Polarité : échelle fixe de −1 (orange) à +1 (vert), neutre au centre
+  const pol = !!opts.polarity, pq = (v) => clamp(Math.round(((v + 1) / 2) * 6), 0, 6);
   const clamped = rows.length !== scaleRows.length;
   const fmt = opts.format || ((v) => pct(v));
   const grid = el("div", { class: "heat", style: `--cols:${cols.length}` });
@@ -652,7 +654,7 @@ function renderHeat(box, id, rows, cols, opts = {}) {
         grid.append(empty); continue;
       }
       const selected = S.selectedCell && S.selectedCell.row === r.key && S.selectedCell.col === c.key && S.selectedCell.id === id;
-      const cell = el("div", { class: `cell ${v === 0 ? "zero" : "q" + q(v)}` + (S.focus && S.cand.has(r.key) && !focus ? " dim" : "") + (selected ? " selected" : ""),
+      const cell = el("div", { class: `cell ${pol ? "p" + pq(v) : v === 0 ? "zero" : "q" + q(v)}` + (S.focus && S.cand.has(r.key) && !focus ? " dim" : "") + (selected ? " selected" : ""),
         role: opts.onCell ? "button" : null, "aria-label": t("aria_cell", { row: r.label, col: c.label, value: fmt(v) }) });
       hoverable(cell, () => ({ title: `${r.label} · ${c.label}`, rows: [{ value: fmt(v), label: opts.unit || "" }, ...(r.counts ? [{ value: num(r.counts[c.key] || 0), label: t("tt_tweets_of", { n: num(r.n) }) }] : [])],
         note: r.n < MIN_N ? t("fragile_n", { n: MIN_N }) : (opts.onCell ? t("click_examples") : null) }));
@@ -664,8 +666,9 @@ function renderHeat(box, id, rows, cols, opts = {}) {
       grid.append(cell);
     }
   }
-  const notes = [opts.note, clamped ? t("heat_clamped", { n: MIN_N_SCALE }) : null].filter(Boolean);
+  const notes = [opts.note, clamped && !pol ? t("heat_clamped", { n: MIN_N_SCALE }) : null].filter(Boolean);
   box.append(el("div", { class: "heat-scroll" }, grid),
+    pol ? el("div", { class: "scale" }, el("span", { text: opts.polarity[0] }), el("span", { class: "steps" }, [0, 1, 2, 3, 4, 5, 6].map((i) => el("span", { class: `p${i}` }))), el("span", { text: opts.polarity[1] })) :
     el("div", { class: "scale" }, el("span", { class: "steps" }, el("span", { class: "zero" })), el("span", { text: t("heat_zero") }),
       el("span", { class: "scale-gap" }), el("span", { text: opts.min0 || pct(0, 0) }), el("span", { class: "steps" }, [0, 1, 2, 3, 4, 5, 6].map((i) => el("span", { class: `q${i}` }))), el("span", { text: (clamped ? "≥ " : "") + fmt(max) })),
     notes.length ? el("p", { class: "note-small", text: notes.join(" ") }) : null);
@@ -678,6 +681,20 @@ function orderCols(cols, rows) {
   const total = (k) => rows.reduce((a, r) => a + (r.counts ? r.counts[k] || 0 : r.values[k] || 0), 0);
   const last = (k) => (/^autre/.test(k) ? 1 : 0);
   return [...cols].sort((a, b) => last(a.key) - last(b.key) || total(b.key) - total(a.key));
+}
+// Polarité par thème : (favorables − critiques) / tweets écologie du candidat sur ce thème, dès 3 tweets
+function stanceByTheme(stats) {
+  const themes = V("themes").options;
+  const rows = stats.map((s) => {
+    const eco = s.tweets.filter((tw) => tw.e), counts = {}, values = {};
+    for (const o of themes) {
+      const on = eco.filter((tw) => tw.themes.includes(o.key));
+      counts[o.key] = on.length;
+      values[o.key] = on.length >= 3 ? on.reduce((a, tw) => a + (STANCE[tw.position] || 0), 0) / on.length : null;
+    }
+    return { key: s.key, label: candName(s.key), n: eco.length, counts, values };
+  }).filter((r) => r.n > 0).sort((a, b) => byBloc(a.key, b.key));
+  return { rows, cols: orderCols(themes.map((o) => ({ key: o.key, label: L(o, "label") })), rows) };
 }
 /* Répartition d'une variable par candidat */
 function distribution(stats, variable, ecologyOnly) {
@@ -880,18 +897,20 @@ function renderApercu(panel) {
     el("div", { class: "controls" }, segCtrl([["ensemble", t("evo_overall")], ["candidats", t("evo_by_cand")]], S.evoMode, (k) => { S.evoMode = k; render(); }, t("evo_mode"))),
     evoLegend, el("div", { class: "chart" }));
   const heatBox = el("div", { class: "chart" });
-  const tabs = el("div", { class: "tabs controls", role: "tablist" }, [["themes", t("heat_themes")], ["cadrage", t("heat_frames")]].map(([k, label]) =>
+  const tabs = el("div", { class: "tabs controls", role: "tablist" }, [["themes", t("heat_themes")], ["cadrage", t("heat_frames")], ["stance", t("heat_stance")]].map(([k, label]) =>
     el("button", { class: "tab", type: "button", role: "tab", "aria-selected": String(S.apercuHeat === k), text: label, onclick: () => { S.apercuHeat = k; render(); } })));
-  const heat = card("apercu-heat", t("heat_title"), S.apercuHeat === "themes" ? "macro" : "cadrage", t("heat_sub"), tabs, heatBox);
+  const heat = card("apercu-heat", t("heat_title"), S.apercuHeat === "themes" ? "macro" : "cadrage", S.apercuHeat === "stance" ? t("heat_sub_stance") : t("heat_sub"), tabs, heatBox);
   panel.append(compass, sail, pos, eng, evo, heat);
   if (wrap) { drawCompass(wrap, rows, { interactive: true }); compassTable("boussole", rows); } else setTable("boussole", [], []);
   renderSaillance(sail.querySelector(".chart"), stats);
   renderPosition(pos.querySelector(".chart"), stats);
   renderEngagement(eng.querySelector(".chart"), tweets);
   renderEvolution(evo.querySelector(".chart"), evoLegend, tweets);
-  const d = distribution(stats, S.apercuHeat, true);
-  renderHeat(heatBox, "apercu-heat", d.rows, d.cols, { empty: t("empty_eco_period"), note: S.apercuHeat === "themes" ? t("multi_themes") : null,
-    onCell: (r, c) => { S.discours = S.apercuHeat === "themes" ? "macro" : "cadrage"; S.discoursVar[S.discours] = S.apercuHeat; S.discoursScope = "ecologie";
+  const stance = S.apercuHeat === "stance";
+  const d = stance ? stanceByTheme(stats) : distribution(stats, S.apercuHeat, true);
+  renderHeat(heatBox, "apercu-heat", d.rows, d.cols, { empty: t("empty_eco_period"), note: stance ? t("stance_note") : S.apercuHeat === "themes" ? t("multi_themes") : null,
+    polarity: stance ? [t("stance_left"), t("stance_right")] : null, format: stance ? signed : undefined, unit: stance ? t("stance_unit") : undefined,
+    onCell: (r, c) => { S.discours = S.apercuHeat === "cadrage" ? "cadrage" : "macro"; S.discoursVar[S.discours] = S.apercuHeat === "cadrage" ? "cadrage" : "themes"; S.discoursScope = "ecologie";
       S.selectedCell = { id: "discours-heat", row: r.key, col: c.key }; S.scrollTo = { sel: "#examples", block: "start" }; go("discours", S.discours); } });
 }
 
