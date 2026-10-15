@@ -1,13 +1,12 @@
 [project]
 name = "presidentielle2027-ecologie"
-version = "0.1.0"
-description = "Extraction des tweets des candidats à la présidentielle 2027 et classification écologie avec Claude"
+version = "0.3.0"
+description = "L'écologie dans les tweets des candidats à la présidentielle 2027 : collecte, codage par analyse critique du discours, site pédagogique"
 requires-python = ">=3.10"
 dependencies = [
     "anthropic>=1.14.0",
     "typesafe-sdk>=0.7.5",
     "requests>=2.31",
-    "pandas>=2.2",
     "pydantic>=2.6",
     "pyyaml>=6.0",
     "python-dotenv>=1.0",

@@ -10,9 +10,8 @@ __pycache__/
 .venv/
 venv/
 
-# Site construit (publié par GitHub Actions, jamais versionné)
-_site/
+# Dépôt de données privé, cloné localement dans data/ (jamais publié ici)
+data/
 
-# Les données (data/raw, data/classified, data/state, data/reports) sont versionnées :
-# la collecte quotidienne les enregistre dans le dépôt pour rester incrémentale.
-data/classified/*.tmp
+# Site construit, publié par GitHub Actions
+_site/

@@ -1,166 +1,92 @@
-# Présidentielle 2027 : l'écologie dans les tweets des candidats
+# L'écologie dans la campagne 2027 sur X
 
-Observatoire du discours écologique des candidats à l'élection présidentielle 2027 sur X.
+Un observatoire pédagogique : ce que les candidats à l'élection présidentielle 2027 publient sur X
+à propos du climat, de l'énergie et de l'environnement, lu avec les outils de l'analyse critique et
+socio-cognitive du discours. Le site s'adresse aux étudiants et aux citoyens curieux de recherche :
+chaque théorie y est expliquée et sourcée, et trois jeux permettent de s'exercer.
 
-1. **Collecte** (`fetch`) : tweets originaux des comptes de `config/candidates.yaml` via l'API X.
-   Tout compte jamais collecté est rattrapé depuis le début de l'étude (1er septembre 2026) par la
-   recherche full-archive, sans plafond de volume ; ensuite, collecte incrémentale quotidienne.
-2. **Codage** (`classify`) selon une grille inspirée de l'analyse critique du discours (van Dijk) :
-   écologie oui/non, centralité, thèmes, position, cadrage, polarisation Nous/Eux, adversaire,
-   victime, acte de discours, registre, chiffres, réactivité, autorité.
-   - **Jev** (TypeSafe), modèle de décision, code chaque jour tous les nouveaux tweets et renvoie
-     des probabilités calibrées.
-   - **Claude** est déclenché à la demande : décisions incertaines de Jev, tweets écologie (relevé
-     du lexique et des implicites), échantillon de validation, ou tout le corpus.
-3. **Validation** (`validate`) : accord Jev / Claude (taux d'accord, kappa de Cohen, alpha de
-   Krippendorff), calibration de Jev.
-4. **Publication** (`report`, `site`) : CSV, synthèse Markdown, et site statique sur GitHub Pages.
+## Ce que fait le projet
 
-Le protocole (hypothèses, corpus, période, fiabilité, plan d'analyse) est dans `docs/METHODOLOGIE.md`.
+1. **Collecte.** Chaque jour, les tweets originaux des comptes personnels des candidats
+   (`config/candidates.yaml`). Tout compte jamais collecté est rattrapé depuis le 1er septembre 2026
+   par la recherche full-archive de l'API X, sans plafond.
+2. **Codage.** Une grille de 19 variables tirée de onze cadres théoriques : macrostructures et carré
+   idéologique (van Dijk), cadrage (Entman), topoï (Wodak), légitimation (van Leeuwen), discours de
+   retardement climatique (Lamb et al.), visions de l'écologie (Dryzek), ethos (Maingueneau, Amossy),
+   agentivité et modalité (Fairclough, Halliday), actes de discours et registre. Jev, un modèle de
+   décision, code chaque jour tous les tweets. Claude est lancé à la demande comme second codeur.
+3. **Analyses sans modèle.** Appropriation des enjeux (Petrocik), suivi des formules
+   (Krieg-Planque, `config/formules.yaml`) et vocabulaire spécifique (lexicométrie, G² de Dunning).
+4. **Site** sur GitHub Pages : onglets Aperçu, Discours, Mots, Tweets, Jouer et Méthode, bulles d'info
+   sourcées, photos des candidats, filtres par période et famille politique. Aucune donnée de visite
+   ni de jeu n'est enregistrée.
+
+Le livre de codes `src/presidentielle/codebook.py` est la source unique : questions de Jev, prompt et
+schéma de Claude, mesures d'accord, libellés et bulles du site.
 
 ## Mise en route
 
-### 1. Clés d'API
+Le dépôt de code est public. Les tweets bruts vont dans un second dépôt **privé**, car les conditions
+développeur de X limitent la redistribution des tweets.
 
-| Secret | Où l'obtenir | Utilisé par |
+1. **Rendre ce dépôt public** : Settings > General > Danger Zone > Change visibility.
+2. **Créer le dépôt de données privé** `french-presidential-2027-data`, en cochant « Add a README ».
+   Un autre nom est possible : il faut alors le renseigner dans la variable `DATA_REPO`.
+3. **Créer un jeton d'accès** : Settings du compte > Developer settings > Fine-grained tokens.
+   Accès au seul dépôt de données, permission Contents en lecture et écriture, expiration d'un an.
+4. **Ajouter les secrets** du dépôt public, dans Settings > Secrets and variables > Actions :
+
+   | Secret | Rôle |
+   |---|---|
+   | `X_BEARER_TOKEN` | API X, facturation à l'usage |
+   | `TYPESAFE_API_KEY` | Jev, codage quotidien |
+   | `ANTHROPIC_API_KEY` | Claude, codage à la demande et jeux |
+   | `DATA_REPO_TOKEN` | jeton de l'étape 3 |
+
+5. **Activer GitHub Pages** : Settings > Pages > Source : GitHub Actions.
+6. **Premier passage** : Actions > Collecte quotidienne > Run workflow.
+
+**Sécurité des clés.** Les secrets GitHub sont chiffrés, masqués dans les journaux, et jamais transmis
+aux workflows lancés depuis des forks. Utilisez des clés dédiées à ce projet, fixez un plafond de
+dépenses dans chaque console, et ne collez jamais une clé dans un fichier ou une conversation.
+
+## Workflows
+
+| Workflow | Déclenchement | Rôle |
 |---|---|---|
-| `X_BEARER_TOKEN` | developer.x.com, projet avec facturation à l'usage | collecte quotidienne |
-| `TYPESAFE_API_KEY` | console.typesafe.ai (accès anticipé à Jev) | collecte quotidienne |
-| `ANTHROPIC_API_KEY` | console.anthropic.com | codage Claude à la demande |
-
-Dans GitHub : *Settings > Secrets and variables > Actions > New repository secret*, une entrée par
-clé. Variables facultatives (même écran, onglet *Variables*) : `JEV_MODEL` (défaut `jev-latest`),
-`CLAUDE_MODEL` (défaut `claude-opus-5-5`).
-
-### 2. GitHub Pages
-
-*Settings > Pages > Build and deployment > Source : GitHub Actions*. Le dépôt étant privé,
-GitHub Pages nécessite un compte GitHub Pro (ou Team / Enterprise). Le site publié est public.
-
-### 3. Premier passage
-
-*Actions > Collecte quotidienne > Run workflow*. Le premier passage rattrape tous les tweets depuis
-le 1er septembre 2026, les code avec Jev et publie le site. Les passages suivants ont lieu chaque
-jour à 05:17 UTC.
-
-## Tâches automatiques (GitHub Actions)
-
-| Workflow | Déclenchement | Ce qu'il fait |
-|---|---|---|
-| **Collecte quotidienne** | chaque jour à 05:17 UTC, ou à la main | collecte X, codage Jev, récupération des batches Claude terminés, validation, rapports, site |
-| **Codage Claude (à la demande)** | à la main uniquement | codage Claude sur la portée choisie, puis validation, rapports, site |
-| **Publier le site** | modification du site, du livre de codes ou de la configuration | republie le site à partir des données enregistrées |
-| **Tests** | chaque push | tests unitaires et vérification de la syntaxe du site |
-
-Les données (`data/raw`, `data/classified`, `data/state`, `data/reports`) sont enregistrées dans le
-dépôt par un commit automatique après chaque passage, ce qui rend la collecte incrémentale.
-
-### Lancer Claude
-
-*Actions > Codage Claude (à la demande) > Run workflow*, depuis le navigateur ou l'application
-GitHub mobile. Paramètres :
-
-| Portée | Tweets envoyés à Claude |
-|---|---|
-| `ecologie_et_incertains` | tweets classés écologie par Jev et décisions Jev incertaines |
-| `incertains` | uniquement les décisions incertaines (p(écologie) entre 0,3 et 0,7, ou confiance < 0,6 sur position, cadrage ou centralité) |
-| `echantillon` | échantillon de validation : tirage aléatoire stratifié par candidat, plus un sur-échantillon de tweets écologie ; persistant, il peut être agrandi |
-| `tous` | tous les tweets non encore codés par Claude |
-
-Un tweet n'est jamais envoyé deux fois à Claude. En mode `batch` (moitié prix), si le traitement
-dépasse quatre heures, la collecte quotidienne récupère automatiquement les résultats.
+| Collecte quotidienne | chaque jour à 05:17 UTC, ou à la main | collecte, Jev, lots Claude terminés, validation, export, site |
+| Codage Claude | à la main | Claude sur une portée : `ecologie_et_incertains`, `incertains`, `echantillon`, `jeux` ou `tous` |
+| Publier le site | modification du code ou de la configuration | republie le site |
+| Rafraîchir les photos | à la main | met à jour `config/photos.json` depuis Wikipédia et Commons |
+| Tests | chaque push | tests et vérification du site |
 
 ## Utilisation locale
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env          # puis renseigner les clés
-export PYTHONPATH=src
+pip install -e ".[dev]"
+git clone https://github.com/<compte>/french-presidential-2027-data data
+cp .env.example .env    # puis renseigner les clés
 
-python -m presidentielle fetch                    # rattrapage puis incrémental
-python -m presidentielle classify                 # Jev sur les tweets non codés
-python -m presidentielle classify --engine claude --scope echantillon --sample-size 300 --mode batch
-python -m presidentielle classify --engine claude --scope incertains --dry-run
-python -m presidentielle validate                 # accord Jev / Claude
-python -m presidentielle report                   # CSV et synthèse Markdown
-python -m presidentielle site                     # site dans _site/ (ouvrir avec un serveur local)
-python -m presidentielle daily                    # tout l'enchaînement quotidien
-```
-
-Options utiles : `fetch --candidate rglucks1`, `fetch --backfill` (refaire le rattrapage, doublons
-ignorés), `fetch --since 2026-10-01 --until 2026-10-08`, `classify --limit 50`,
-`classify --collect-pending` (batches Claude non récupérés).
-
-## Configuration
-
-- `config/candidates.yaml` : candidats, parti, famille politique (`bloc`), handle X, statut.
-  `enabled: false` exclut un compte. Le pipeline s'arrête avec un message explicite si un handle
-  n'existe pas. Le rattachement à une famille politique est un choix de codage à valider.
-- `config/study.yaml` : date de début, phases de la campagne, événements affichés sur les séries,
-  familles politiques.
-- `src/presidentielle/codebook.py` : livre de codes, source unique des questions Jev, du prompt
-  Claude, du schéma de sortie et des libellés du site.
-
-## Grille de codage
-
-| Bloc | Variables |
-|---|---|
-| Contenu | `parle_ecologie` (oui/non), `niveau` (aucun, secondaire, central), `themes` (14 thèmes) |
-| Position | `position` (favorable_transition, critique_ecologie, neutre, non_applicable) |
-| Discours (CDA) | `cadrage`, `polarisation` (carré idéologique), `adversaire`, `victime`, `acte_discursif`, `registre`, `chiffres`, `reactivite`, `autorite` |
-| Sémantique locale (Claude) | `nous`, `eux`, `lexique` (expressions citées), `implicites`, `resume`, `confiance` |
-
-Règles clés : une critique de l'écologie (« écologie punitive », rejet des ZFE) est un tweet écologie
-avec `position = critique_ecologie` ; l'énergie (nucléaire, prix, réseau) entre dans le périmètre ;
-les métaphores (« climat politique ») sont exclues. Les définitions sont en anglais, langue
-principale de Jev ; les tweets restent en français.
-
-## Coûts estimés
-
-Hypothèse : 21 comptes, environ 100 tweets originaux par jour au total, à affiner après le premier
-passage. Tarifs d'octobre 2026 : X environ 0,005 $ par post lu, Jev 0,042 $ par million de tokens
-d'entrée (sortie gratuite, ~2 300 tokens par tweet), Claude Opus 5.5 (~3 100 tokens d'entrée en
-cache, ~600 de sortie avec réflexion, soit ~0,013 $ par tweet, ~0,007 $ en batch).
-
-| Poste | Rattrapage sept.-oct. (~4 500 tweets) | Par mois (~3 000 tweets) | Étude jusqu'au 2nd tour (~25 000 tweets) |
-|---|---|---|---|
-| API X | ~23 $ | ~15 $ | ~125 $ |
-| Jev | < 1 $ | < 1 $ | ~3 $ |
-| GitHub Actions | 0 $ | 0 $ (~150 min sur 2 000 gratuites) | 0 $ |
-| Claude, échantillon de 300 (batch) | | | ~2 $ |
-| Claude, écologie et incertains (~25 %, batch) | ~8 $ | ~5 $ | ~45 $ |
-| Claude, tout le corpus (batch) | ~32 $ | ~21 $ | ~175 $ |
-
-Hors GitHub Pro si nécessaire pour Pages sur un dépôt privé.
-
-## Sorties
-
-| Fichier | Contenu |
-|---|---|
-| `data/raw/tweets.jsonl` | tweets bruts normalisés (texte complet, métriques, URL) |
-| `data/classified/classifications.jsonl` | une ligne par tweet : codage Jev (probabilités, confiances), codage Claude, valeurs finales et leur source |
-| `data/state/` | curseurs de collecte, comptes résolus, batches Claude, échantillon de validation |
-| `data/reports/tweets_classifies.csv` | jointure tweets et codage |
-| `data/reports/synthese_candidats.csv` | par candidat : part écologie, positions, cadrage dominant, polarisation, adversaire principal, engagement |
-| `data/reports/synthese_themes.csv`, `serie_hebdomadaire.csv` | par thème ; par candidat et par semaine |
-| `data/reports/synthese.md` | rapport lisible avec tableaux croisés |
-| `data/reports/validation.json`, `validation.md` | accord Jev / Claude, calibration |
-
-## Site
-
-Le site (`site/`, HTML, CSS et JavaScript sans dépendance) lit `data.json` et calcule les agrégats
-dans le navigateur. Filtres : période (fenêtres glissantes et phases de campagne), famille
-politique, candidat mis en avant. Vues : part de tweets écologie par candidat, position
-(barres divergentes), évolution hebdomadaire, thèmes et cadrages, carré idéologique, explorateur de
-tweets écologie, fiabilité du codage, méthode et livre de codes. Chaque graphique a une vue
-tableau ; mode clair et sombre. Seul le texte des tweets écologie est publié.
-
-## Tests
-
-```bash
+python -m presidentielle fetch          # collecte
+python -m presidentielle classify       # Jev
+python -m presidentielle classify --engine claude --scope echantillon --sample-size 300
+python -m presidentielle games          # préparation des jeux par Claude
+python -m presidentielle publish        # validation, export CSV, site dans _site/
 python -m pytest -q
 ```
 
-Les tests utilisent des réponses API simulées et un échantillon fictif (`data/sample/`, candidats
-imaginaires) ; aucun appel réseau.
+`python -m presidentielle --help` liste toutes les options.
+
+## Coûts estimés
+
+Hypothèse : 21 comptes, environ 100 tweets originaux par jour, soit 25 000 tweets jusqu'au second tour.
+
+| Poste | Par mois | Étude complète |
+|---|---|---|
+| API X, environ 0,005 $ par tweet lu | ~15 $ | ~125 $ |
+| Jev, environ 5 500 tokens par tweet à 0,042 $ par million | < 1 $ | ~6 $ |
+| Claude en lot, écologie et décisions incertaines, environ 25 % des tweets | ~8 à 15 $ | ~60 à 120 $ |
+| Claude, échantillon de validation de 300 tweets | | ~3 à 6 $ |
+| Claude, préparation des jeux | | ~2 $ |
+| GitHub Actions et Pages, dépôt public | 0 $ | 0 $ |

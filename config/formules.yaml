@@ -1,0 +1,64 @@
+# Formules suivies (Krieg-Planque) : expressions qui circulent et font débat.
+# Les variantes sont des expressions régulières, comparées sans accents ni majuscules.
+# Ajoutez une formule dès qu'elle émerge dans le débat : l'historique est recalculé à chaque passage.
+formules:
+  - key: ecologie_punitive
+    label: « Écologie punitive »
+    variantes: ["ecologie punitive", "ecologie de la punition"]
+  - key: planification_ecologique
+    label: « Planification écologique »
+    variantes: ["planification ecologique"]
+  - key: transition_ecologique
+    label: « Transition écologique »
+    variantes: ["transition ecologique"]
+  - key: transition_energetique
+    label: « Transition énergétique »
+    variantes: ["transition energetique"]
+  - key: sobriete
+    label: « Sobriété »
+    variantes: ["sobriete"]
+  - key: decroissance
+    label: « Décroissance »
+    variantes: ["decroissance", "decroissant(e|s|es)?\\b"]
+  - key: croissance_verte
+    label: « Croissance verte »
+    variantes: ["croissance verte"]
+  - key: ecologie_populaire
+    label: « Écologie populaire »
+    variantes: ["ecologie populaire"]
+  - key: ecologie_bon_sens
+    label: « Écologie du bon sens »
+    variantes: ["ecologie (de|du) bon sens", "ecologie pragmatique"]
+  - key: ecologie_radicale
+    label: « Khmers verts », « écologie radicale »
+    variantes: ["khmers? verts?", "ayatollahs? (verts?|de l.ecologie)", "ecologie radicale", "ecologistes radicaux", "ecolo-?gauchis(te|tes|me)"]
+  - key: urgence_climatique
+    label: « Urgence climatique »
+    variantes: ["urgence (climatique|ecologique)"]
+  - key: justice_climatique
+    label: « Justice climatique »
+    variantes: ["justice climatique"]
+  - key: fin_du_mois
+    label: « Fin du monde, fin du mois »
+    variantes: ["fin du monde.{0,30}fin du mois", "fin du mois.{0,30}fin du monde"]
+  - key: souverainete_energetique
+    label: « Souveraineté énergétique »
+    variantes: ["souverainete energetique", "independance energetique"]
+  - key: regle_verte
+    label: « Règle verte »
+    variantes: ["regle verte"]
+  - key: pacte_vert
+    label: « Pacte vert », « Green Deal »
+    variantes: ["pacte vert", "green deal"]
+  - key: zfe
+    label: « ZFE »
+    variantes: ["\\bzfe\\b", "zones? a faibles? emissions?"]
+  - key: agribashing
+    label: « Agribashing »
+    variantes: ["agri-?bashing"]
+  - key: megabassines
+    label: « Mégabassines »
+    variantes: ["mega-?bassines?"]
+  - key: ecocide
+    label: « Écocide »
+    variantes: ["ecocide"]

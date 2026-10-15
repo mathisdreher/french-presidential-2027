@@ -1,7 +1,8 @@
 """Fiabilité du codage : accord entre Jev et Claude sur les tweets codés par les deux moteurs.
 
 Métriques par variable : taux d'accord, kappa de Cohen, alpha de Krippendorff (nominal, ou
-ordinal pour les échelles `niveau` et `registre`), matrice de confusion. Calibration de la
+ordinal pour les échelles), matrice de confusion ; pour les variables à choix multiples,
+alpha binaire par catégorie et indice de Jaccard moyen. Calibration de la
 probabilité p(écologie) de Jev, en prenant le codage de Claude comme référence.
 
 Deux périmètres :
@@ -25,10 +26,7 @@ from .storage import load_json, read_jsonl, save_json
 
 log = logging.getLogger(__name__)
 
-ORDINAL = {"niveau": cb.NIVEAU.level_keys, "registre": cb.REGISTRE.level_keys}
-NOMINAL = ("parle_ecologie", "position", "cadrage", "polarisation", "adversaire", "victime",
-           "acte_discursif", "chiffres", "reactivite", "autorite")
-CONFUSION_VARS = ("parle_ecologie", "position", "cadrage")
+CONFUSION_VARS = ("parle_ecologie", "position", "cadrage", "vision")
 
 
 # ----------------------------------------------------------------------------- métriques
@@ -110,44 +108,43 @@ def _r(x: Optional[float]) -> Optional[float]:
 
 
 # --------------------------------------------------------------------------- évaluation
+def _in_scope(var: cb.Variable, j: dict, c: dict) -> bool:
+    return var.scope != "ecologie" or bool(j.get("parle_ecologie") and c.get("parle_ecologie"))
+
+
 def evaluate(pairs: list[tuple[dict, dict, Optional[float]]]) -> dict:
     """pairs : (valeurs Jev, valeurs Claude, p(écologie) Jev)."""
-    out: dict = {"n": len(pairs), "variables": [], "themes": [], "confusions": {}}
+    out: dict = {"n": len(pairs), "variables": [], "multi": {}, "confusions": {}}
     if not pairs:
         return out
-    for key in (*NOMINAL, *ORDINAL):
-        a = [p[0].get(key) for p in pairs]
-        b = [p[1].get(key) for p in pairs]
-        keep = [(x, y) for x, y in zip(a, b) if x is not None and y is not None]
+    for var in cb.VARIABLES:
+        scoped = [(j, c) for j, c, _ in pairs if _in_scope(var, j, c)]
+        if var.kind == "multi":
+            jaccards, options = [], []
+            for j, c in scoped:
+                a, b = set(j.get(var.key) or []), set(c.get(var.key) or [])
+                if a or b:
+                    jaccards.append(len(a & b) / len(a | b))
+            for opt in var.option_keys:
+                a = [opt in (j.get(var.key) or []) for j, _ in scoped]
+                b = [opt in (c.get(var.key) or []) for _, c in scoped]
+                if any(a) or any(b):
+                    options.append({"option": opt, "n": len(a), "accord": _r(percent_agreement(a, b)),
+                                    "alpha": _r(krippendorff_alpha(a, b))})
+            alphas = [o["alpha"] for o in options if o["alpha"] is not None]
+            out["multi"][var.key] = {"n": len(scoped), "jaccard_moyen": _r(sum(jaccards) / len(jaccards)) if jaccards else None,
+                                     "alpha_moyen": _r(sum(alphas) / len(alphas)) if alphas else None, "options": options}
+            continue
+        keep = [(j.get(var.key), c.get(var.key)) for j, c in scoped if j.get(var.key) is not None and c.get(var.key) is not None]
         a, b = [x for x, _ in keep], [y for _, y in keep]
-        order = ORDINAL.get(key)
+        order = var.option_keys if var.kind == "score" else None
         out["variables"].append({
-            "variable": key,
-            "metrique": "ordinale" if order else "nominale",
-            "n": len(a),
-            "accord": _r(percent_agreement(a, b)),
-            "kappa": _r(cohen_kappa(a, b)),
-            "alpha": _r(krippendorff_alpha(a, b, order)),
+            "variable": var.key, "metrique": "ordinale" if order else "nominale", "n": len(a),
+            "accord": _r(percent_agreement(a, b)), "kappa": _r(cohen_kappa(a, b)), "alpha": _r(krippendorff_alpha(a, b, order)),
         })
-        if key in CONFUSION_VARS:
-            out["confusions"][key] = confusion(a, b)
-
-    # thèmes : décision binaire par thème, sur les tweets que les deux moteurs classent écologie
-    eco = [p for p in pairs if p[0].get("parle_ecologie") and p[1].get("parle_ecologie")]
-    jaccards = []
-    for p in eco:
-        ta, tb = set(p[0].get("themes") or []), set(p[1].get("themes") or [])
-        if ta or tb:
-            jaccards.append(len(ta & tb) / len(ta | tb))
-    out["themes_jaccard_moyen"] = _r(sum(jaccards) / len(jaccards)) if jaccards else None
-    for theme in cb.THEME_KEYS:
-        a = [theme in (p[0].get("themes") or []) for p in eco]
-        b = [theme in (p[1].get("themes") or []) for p in eco]
-        if any(a) or any(b):
-            out["themes"].append({"theme": theme, "n": len(a), "accord": _r(percent_agreement(a, b)),
-                                  "alpha": _r(krippendorff_alpha(a, b))})
-
-    probs = [(p[2], bool(p[1].get("parle_ecologie"))) for p in pairs if p[2] is not None]
+        if var.key in CONFUSION_VARS:
+            out["confusions"][var.key] = confusion(a, b)
+    probs = [(p, bool(c.get("parle_ecologie"))) for _, c, p in pairs if p is not None]
     out["calibration_ecologie"] = calibration([x for x, _ in probs], [t for _, t in probs])
     return out
 
@@ -196,8 +193,9 @@ def _write_markdown(result: dict) -> None:
         lines = ["| Variable | Métrique | n | Accord | Kappa | Alpha |", "|---|---|---|---|---|---|"]
         for v in ev["variables"]:
             lines.append(f"| {v['variable']} | {v['metrique']} | {v['n']} | {v['accord']} | {v['kappa']} | {v['alpha']} |")
-        lines += ["", f"Thèmes, Jaccard moyen : {ev.get('themes_jaccard_moyen')}",
-                  f"Calibration p(écologie), score de Brier : {ev['calibration_ecologie']['brier']}", ""]
+        for key, m in ev["multi"].items():
+            lines.append(f"| {key} (multiple, alpha moyen par catégorie) | binaire | {m['n']} | Jaccard {m['jaccard_moyen']} | | {m['alpha_moyen']} |")
+        lines += ["", f"Calibration p(écologie), score de Brier : {ev['calibration_ecologie']['brier']}", ""]
         return lines
 
     r = result["routage"]

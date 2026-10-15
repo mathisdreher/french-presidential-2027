@@ -1,16 +1,17 @@
 name: Codage Claude (à la demande)
 
-# Déclenché à la main (onglet Actions > Codage Claude > Run workflow, ou depuis l'app GitHub).
+# Lancement manuel : onglet Actions > Codage Claude > Run workflow, ou application GitHub mobile.
 on:
   workflow_dispatch:
     inputs:
       portee:
-        description: "Tweets à coder par Claude"
+        description: "Tweets confiés à Claude"
         type: choice
         options:
           - ecologie_et_incertains
           - incertains
           - echantillon
+          - jeux
           - tous
         default: ecologie_et_incertains
       taille_echantillon:
@@ -18,7 +19,7 @@ on:
         type: number
         default: 300
       mode:
-        description: "batch : moitié prix, résultats en général sous 1 h ; sync : immédiat"
+        description: "batch : moitié prix, résultats en général sous 1 h ; sync : immédiat (la portée « jeux » est toujours immédiate)"
         type: choice
         options:
           - batch
@@ -30,7 +31,7 @@ on:
         default: ""
 
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
 
@@ -45,26 +46,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Vérifier les secrets
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DATA_REPO_TOKEN: ${{ secrets.DATA_REPO_TOKEN }}
+        run: |
+          for name in ANTHROPIC_API_KEY DATA_REPO_TOKEN; do
+            if [ -z "${!name}" ]; then echo "::error::Secret $name manquant : Settings > Secrets and variables > Actions."; exit 1; fi
+          done
+
+      - name: Récupérer le dépôt de données privé
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.DATA_REPO || format('{0}-data', github.repository) }}
+          token: ${{ secrets.DATA_REPO_TOKEN }}
+          path: data
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
+          cache-dependency-path: pyproject.toml
 
-      - name: Installer les dépendances
-        run: pip install -r requirements.txt
-
-      - name: Vérifier le secret Anthropic
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          if [ -z "$ANTHROPIC_API_KEY" ]; then
-            echo "::error::Secret ANTHROPIC_API_KEY manquant : Settings > Secrets and variables > Actions."
-            exit 1
-          fi
+      - run: pip install -e .
 
       - name: Codage Claude
         env:
-          PYTHONPATH: src
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
           PORTEE: ${{ inputs.portee }}
@@ -72,27 +79,29 @@ jobs:
           MODE: ${{ inputs.mode }}
           LIMITE: ${{ inputs.limite }}
         run: |
-          args=(--engine claude --scope "$PORTEE" --sample-size "$TAILLE" --mode "$MODE" --timeout-minutes 240)
-          if [ -n "$LIMITE" ]; then args+=(--limit "$LIMITE"); fi
-          python -m presidentielle classify "${args[@]}"
+          limit=(); if [ -n "$LIMITE" ]; then limit=(--limit "$LIMITE"); fi
+          if [ "$PORTEE" = "jeux" ]; then
+            python -m presidentielle games "${limit[@]}"
+          else
+            python -m presidentielle classify --engine claude --scope "$PORTEE" --sample-size "$TAILLE" --mode "$MODE" --timeout-minutes 240 "${limit[@]}"
+          fi
 
-      - name: Validation, rapports et site
-        env:
-          PYTHONPATH: src
+      - name: Validation, export et site
         run: python -m presidentielle publish --out _site
 
-      - name: Enregistrer les données dans le dépôt
+      - name: Enregistrer les données dans le dépôt privé
         if: always()
+        working-directory: data
+        env:
+          PORTEE: ${{ inputs.portee }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/
+          git add -A
           if git diff --cached --quiet; then echo "Aucune donnée nouvelle."; exit 0; fi
-          git commit -m "Données : codage Claude ($PORTEE) du $(date -u +%F)"
-          git pull --rebase origin "$GITHUB_REF_NAME"
-          git push origin "HEAD:$GITHUB_REF_NAME"
-        env:
-          PORTEE: ${{ inputs.portee }}
+          git commit -m "Codage Claude ($PORTEE) du $(date -u +%F)"
+          git pull --rebase
+          git push
 
       - uses: actions/upload-pages-artifact@v3
         with:

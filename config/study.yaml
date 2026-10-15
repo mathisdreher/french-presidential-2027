@@ -49,3 +49,18 @@ blocs:
     label: Souverainistes
   - key: extreme_droite
     label: Extrême droite
+
+# Questions de l'étude, affichées sur le site (onglet Méthode).
+questions:
+  - titre: Saillance
+    texte: L'écologie occupe-t-elle une place mineure dans les tweets de la plupart des candidats, et progresse-t-elle lors d'événements comme la COP31 ou les épisodes climatiques ?
+  - titre: Cadrage par camp
+    texte: La droite et l'extrême droite cadrent-elles l'écologie comme une contrainte ou une affaire de souveraineté, et la gauche comme une urgence, une question de justice ou une opportunité ?
+  - titre: Énergie ou climat
+    texte: À droite, parle-t-on davantage d'énergie et de nucléaire que de climat, et l'inverse à gauche ?
+  - titre: Nous et eux
+    texte: Les candidats critiques de l'écologie recourent-ils plus souvent à la présentation négative d'autrui, et les candidats favorables à l'autoprésentation positive ?
+  - titre: Retardement
+    texte: Quels discours de retardement climatique dominent, et chez quels candidats, y compris parmi ceux qui se disent favorables à la transition ?
+  - titre: Émotion et engagement
+    texte: Les tweets écologie au registre alarmiste ou indigné suscitent-ils plus de réactions que les tweets factuels ?

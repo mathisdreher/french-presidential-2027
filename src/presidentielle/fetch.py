@@ -20,18 +20,37 @@ from .x_client import XClient, XApiError, author_query, full_text
 log = logging.getLogger(__name__)
 
 
+def account_status(entry: dict | None) -> str:
+    if not entry:
+        return "inconnu"
+    return entry.get("status") or ("ok" if entry.get("id") else "inconnu")
+
+
 def resolve_users(client: XClient, candidates: list[config.Candidate]) -> dict[str, dict]:
-    """Résout handle -> user id, avec cache dans data/state/users.json."""
+    """Résout handle -> compte X, avec cache dans state/users.json.
+
+    Un compte introuvable, suspendu ou protégé n'arrête pas la collecte : il est signalé
+    (statut « introuvable » ou « protege ») et le site l'affiche comme tel. Il est retenté
+    à chaque passage, au cas où le handle aurait été corrigé ou le compte rétabli.
+    """
     cache: dict[str, dict] = load_json(config.USERS_STATE_FILE, {})
     for cand in candidates:
-        if cand.slug in cache:
+        if not cand.handle or account_status(cache.get(cand.slug)) == "ok":
             continue
         try:
             user = client.get_user_by_username(cand.handle)
         except XApiError as e:
-            raise SystemExit(f"[{cand.name}] {e}\nCorrigez le handle dans config/candidates.yaml.") from e
-        cache[cand.slug] = {"id": user["id"], "username": user["username"], "name": user.get("name")}
-        log.info("Résolu @%s -> %s", user["username"], user["id"])
+            if e.status in (429,) or (e.status or 0) >= 500:
+                raise
+            cache[cand.slug] = {"status": "introuvable", "error": str(e)[:200]}
+            log.warning("[%s] compte @%s introuvable : %s", cand.name, cand.handle, e)
+            save_json(config.USERS_STATE_FILE, cache)
+            continue
+        status = "protege" if user.get("protected") else "ok"
+        image = (user.get("profile_image_url") or "").replace("_normal.", "_400x400.")
+        cache[cand.slug] = {"status": status, "id": user["id"], "username": user["username"], "name": user.get("name"),
+                            "followers": (user.get("public_metrics") or {}).get("followers_count"), "image": image}
+        log.info("Résolu @%s -> %s (%s)", user["username"], user["id"], status)
         save_json(config.USERS_STATE_FILE, cache)
     return cache
 
@@ -76,7 +95,9 @@ def fetch(client: XClient, candidates: list[config.Candidate], *, days: Optional
     search_available = True
     total = 0
     for cand in candidates:
-        user = users[cand.slug]
+        user = users.get(cand.slug) or {}
+        if account_status(user) != "ok":
+            continue
         since_id = None if backfill else since_ids.get(cand.slug)
         new_rows = []
         newest_id = since_ids.get(cand.slug)

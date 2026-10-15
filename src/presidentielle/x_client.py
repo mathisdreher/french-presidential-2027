@@ -72,9 +72,9 @@ class XClient:
     # ------------------------------------------------------------- utilisateurs
     def get_user_by_username(self, username: str) -> dict:
         data = self._get(f"/users/by/username/{username.lstrip('@')}",
-                         {"user.fields": "id,name,username,public_metrics,verified"})
+                         {"user.fields": "id,name,username,public_metrics,verified,protected,profile_image_url"})
         if "data" not in data:
-            raise XApiError(f"Compte X introuvable : @{username} ({data.get('errors')})")
+            raise XApiError(f"Compte X introuvable : @{username} ({data.get('errors')})", 404)
         return data["data"]
 
     # --------------------------------------------------------------- timeline

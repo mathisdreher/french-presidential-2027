@@ -1,13 +1,12 @@
-"""Moteur de décision Jev (TypeSafe) : « System One ».
+"""Jev (TypeSafe), modèle de décision « System One ».
 
-Un appel par tweet, toutes les questions en parallèle (fan-out). Jev renvoie pour chaque
-question une décision typée, une distribution de probabilités et une confiance calibrée.
-Pas de texte libre : le résumé et l'analyse lexicale restent du ressort de Claude.
+Un appel par tweet : toutes les questions du livre de codes en parallèle (fan-out). Chaque
+réponse porte une distribution de probabilités et une confiance calibrée. Les variables à choix
+multiples sont posées comme une question oui/non par catégorie.
 """
 
 from __future__ import annotations
 
-import logging
 import os
 from typing import Any
 
@@ -15,31 +14,27 @@ from typesafe_sdk import Choice, Noul, Score, TypeSafeClient
 
 from . import codebook as cb
 
-log = logging.getLogger(__name__)
-
 DEFAULT_JEV_MODEL = "jev-latest"
 NOUL_THRESHOLD = 0.5
+SEP = "__"
 
 
 def jev_model() -> str:
-    return os.environ.get("JEV_MODEL", DEFAULT_JEV_MODEL).strip() or DEFAULT_JEV_MODEL
+    return os.environ.get("JEV_MODEL", "").strip() or DEFAULT_JEV_MODEL
 
 
 def build_questions() -> dict[str, Any]:
-    """Questions Jev générées depuis le codebook (ordre stable)."""
     q: dict[str, Any] = {}
     for var in cb.VARIABLES:
         if var.kind == "noul":
             q[var.key] = Noul(instructions=var.instructions)
         elif var.kind == "choice":
-            q[var.key] = Choice(instructions=var.instructions,
-                                criteria={o.key: o.description for o in var.options})
+            q[var.key] = Choice(instructions=var.instructions, criteria={o.key: o.description for o in var.options})
         elif var.kind == "score":
-            q[var.key] = Score(instructions=var.instructions, criteria=list(var.levels))
-    for theme in cb.THEMES:
-        q[f"theme_{theme.key}"] = Noul(
-            instructions=f"The tweet addresses the following ecological theme: {theme.label}. {theme.description}.",
-        )
+            q[var.key] = Score(instructions=var.instructions, criteria=[o.description for o in var.options])
+        else:
+            for o in var.options:
+                q[f"{var.key}{SEP}{o.key}"] = Noul(instructions=f"{var.instructions} {o.description}.")
     return q
 
 
@@ -54,42 +49,39 @@ def build_state(tweet: dict) -> dict:
     }
 
 
-def _level_from_score(var: cb.Variable, probabilities: dict) -> str:
-    best = max(probabilities.items(), key=lambda kv: kv[1])[0]
-    return var.level_keys[int(best)]
-
-
 def flatten(response) -> dict:
-    """Convertit la réponse Jev en valeurs finales + probabilités/confiances."""
+    """Réponse Jev -> valeurs finales, probabilités et confiances."""
     answers = response.answers
     probs: dict[str, Any] = {}
     conf: dict[str, float] = {}
     values: dict[str, Any] = {}
-
     for var in cb.VARIABLES:
-        a = answers[var.key]
         if var.kind == "noul":
-            probs[var.key] = round(a.noul, 4)
-            values[var.key] = a.noul >= NOUL_THRESHOLD
+            p = answers[var.key].noul
+            probs[var.key] = round(p, 4)
+            values[var.key] = p >= NOUL_THRESHOLD
         elif var.kind == "choice":
+            a = answers[var.key]
             probs[var.key] = {k: round(v, 4) for k, v in a.probabilities.items()}
             conf[var.key] = round(a.confidence, 4)
             values[var.key] = a.choice
         elif var.kind == "score":
+            a = answers[var.key]
             probs[var.key] = {str(k): round(v, 4) for k, v in a.probabilities.items()}
             conf[var.key] = round(a.confidence, 4)
-            values[var.key] = _level_from_score(var, a.probabilities)
+            best = max(a.probabilities.items(), key=lambda kv: kv[1])[0]
+            values[var.key] = var.options[int(best)].key
             values[f"{var.key}_score"] = round(a.score, 3)
-
-    theme_probs = {t.key: round(answers[f"theme_{t.key}"].noul, 4) for t in cb.THEMES}
-    probs["themes"] = theme_probs
-    values["themes"] = [k for k, p in theme_probs.items() if p >= NOUL_THRESHOLD]
+        else:
+            per = {o.key: round(answers[f"{var.key}{SEP}{o.key}"].noul, 4) for o in var.options}
+            probs[var.key] = per
+            values[var.key] = [k for k, p in per.items() if p >= NOUL_THRESHOLD]
 
     if not values["parle_ecologie"]:
         values.update(cb.NON_ECOLOGIE_DEFAULTS)
     elif not values["themes"]:
-        # parle d'écologie mais aucun thème au-dessus du seuil : garder le plus probable
-        values["themes"] = [max(theme_probs.items(), key=lambda kv: kv[1])[0]]
+        # écologie sans thème au-dessus du seuil : garder le plus probable
+        values["themes"] = [max(probs["themes"].items(), key=lambda kv: kv[1])[0]]
 
     return {
         "values": values,
@@ -107,15 +99,14 @@ class JevClassifier:
         self.questions = build_questions()
 
     def classify(self, tweet: dict) -> dict:
-        response = self.client.system_one(state=build_state(tweet), questions=self.questions, model=self.model)
-        return flatten(response)
+        return flatten(self.client.system_one(state=build_state(tweet), questions=self.questions, model=self.model))
 
     def close(self) -> None:
         self.client.close()
 
 
 def low_confidence(result: dict, threshold: float = 0.6) -> bool:
-    """Vrai si la décision écologie ou une décision de contenu est peu sûre (routage vers Claude)."""
+    """Décision peu sûre : à confier à Claude quand il est lancé."""
     p = result["probabilities"]["parle_ecologie"]
     if 0.3 <= p <= 0.7:
         return True

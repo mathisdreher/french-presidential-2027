@@ -1,15 +1,15 @@
 name: Collecte quotidienne
 
-# Chaque jour : nouveaux tweets (rattrapage complet depuis le début de l'étude pour tout
-# compte jamais collecté), codage Jev, récupération des batches Claude terminés,
-# rapports, validation, puis publication du site sur GitHub Pages.
+# Chaque jour : nouveaux tweets (rattrapage complet pour tout compte jamais collecté),
+# codage Jev, récupération des lots Claude terminés, validation, export, puis site.
+# Les données vivent dans le dépôt privé <ce dépôt>-data (ou la variable DATA_REPO).
 on:
   schedule:
-    - cron: "17 5 * * *"   # 05:17 UTC, soit 6 h 17 (hiver) ou 7 h 17 (été) à Paris
+    - cron: "17 5 * * *"   # 05:17 UTC, soit 6 h 17 en hiver et 7 h 17 en été à Paris
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
 
@@ -20,33 +20,37 @@ concurrency:
 jobs:
   collecte:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-
-      - name: Installer les dépendances
-        run: pip install -r requirements.txt
 
       - name: Vérifier les secrets
         env:
           X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+          DATA_REPO_TOKEN: ${{ secrets.DATA_REPO_TOKEN }}
         run: |
-          for name in X_BEARER_TOKEN TYPESAFE_API_KEY; do
-            if [ -z "${!name}" ]; then
-              echo "::error::Secret $name manquant : Settings > Secrets and variables > Actions."
-              exit 1
-            fi
+          for name in X_BEARER_TOKEN TYPESAFE_API_KEY DATA_REPO_TOKEN; do
+            if [ -z "${!name}" ]; then echo "::error::Secret $name manquant : Settings > Secrets and variables > Actions."; exit 1; fi
           done
 
-      - name: Collecte, codage Jev, rapports et site
+      - name: Récupérer le dépôt de données privé
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.DATA_REPO || format('{0}-data', github.repository) }}
+          token: ${{ secrets.DATA_REPO_TOKEN }}
+          path: data
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - run: pip install -e .
+
+      - name: Collecte, codage Jev et site
         env:
-          PYTHONPATH: src
           X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -54,16 +58,17 @@ jobs:
           CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
         run: python -m presidentielle daily --out _site
 
-      - name: Enregistrer les données dans le dépôt
+      - name: Enregistrer les données dans le dépôt privé
         if: always()
+        working-directory: data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/
+          git add -A
           if git diff --cached --quiet; then echo "Aucune donnée nouvelle."; exit 0; fi
-          git commit -m "Données : collecte du $(date -u +%F)"
-          git pull --rebase origin "$GITHUB_REF_NAME"
-          git push origin "HEAD:$GITHUB_REF_NAME"
+          git commit -m "Collecte du $(date -u +%F)"
+          git pull --rebase
+          git push
 
       - uses: actions/upload-pages-artifact@v3
         with:

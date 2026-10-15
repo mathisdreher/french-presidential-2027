@@ -9,7 +9,6 @@ Moteurs :
                 ecologie_et_incertains  tweets écologie (lexique, implicites) + incertains
                 echantillon             échantillon de validation (double codage Jev/Claude)
                 tous                    tous les tweets non encore codés par Claude
-  - hybrid  : Jev puis Claude sur ecologie_et_incertains, en une commande.
 
 Modes Claude : sync (appels immédiats) ou batch (API Batches, -50 %).
 Les résultats sont ajoutés à data/classified/classifications.jsonl ; un tweet déjà
@@ -39,9 +38,8 @@ log = logging.getLogger(__name__)
 MAX_TOKENS = 2048
 FLUSH_EVERY = 200  # écriture intermédiaire pendant les longs rattrapages
 EFFORT = "low"  # grille de codage courte : effort bas suffit et réduit le coût
-CATEGORICAL = ("parle_ecologie", "niveau", "themes", "position", "cadrage", "polarisation", "adversaire",
-               "victime", "acte_discursif", "registre", "chiffres", "reactivite", "autorite")
-TEXTUAL = ("nous", "eux", "lexique", "implicites", "resume", "confiance")
+CATEGORICAL = tuple(v.key for v in cb.VARIABLES)
+TEXTUAL = tuple(cb.TEXT_FIELDS)
 
 
 def _now() -> str:
@@ -65,7 +63,7 @@ def _match_candidate(tweet: dict, candidate: Optional[str]) -> bool:
 
 
 def pending_tweets(engine: str = "jev", limit: Optional[int] = None, candidate: Optional[str] = None) -> list[dict]:
-    """Tweets sans codage du moteur demandé (pour hybrid : sans codage Jev)."""
+    """Tweets sans codage du moteur demandé."""
     key = "claude" if engine == "claude" else "jev"
     rows = load_rows()
     out = []
@@ -196,7 +194,6 @@ def merge(tweet_id: str, jev: Optional[dict], claude: Optional[dict], existing: 
     else:
         raise ValueError("Aucun résultat à fusionner")
     row["final_source"] = source
-    row["engine"] = "hybrid" if (jev and claude) else source
 
     values = (jev["values"] if source == "jev" else claude["values"])
     for key in CATEGORICAL:
@@ -438,18 +435,3 @@ def classify_claude_batch(tweets: list[dict], *, model: Optional[str] = None, wa
     if wait_batch(batch_id, timeout_minutes=timeout_minutes):
         return collect_batch(batch_id)
     return 0
-
-
-# ------------------------------------------------------------------------- hybrid
-def classify_hybrid(tweets: list[dict], *, mode: str = "sync", model: Optional[str] = None,
-                    workers: int = 4, wait: bool = True) -> int:
-    """Jev sur les tweets fournis, puis Claude sur les tweets écologie et les décisions peu sûres."""
-    n = classify_jev(tweets, workers=workers)
-    ids = {t["id"] for t in tweets}
-    targets = [t for t in claude_targets("ecologie_et_incertains") if t["id"] in ids]
-    log.info("[hybrid] %d tweets transmis à Claude (écologie ou confiance faible)", len(targets))
-    if mode == "batch":
-        n += classify_claude_batch(targets, model=model, wait=wait)
-    else:
-        n += classify_claude_sync(targets, model=model, workers=workers)
-    return n

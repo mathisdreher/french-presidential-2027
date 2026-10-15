@@ -20,23 +20,31 @@ def test_ordinal_penalises_distant_disagreements_more():
     assert krippendorff_alpha(base, near, order) > krippendorff_alpha(base, far, order)
 
 
-def _vals(eco, pos="neutre", themes=()):
-    return {"parle_ecologie": eco, "niveau": "central" if eco else "aucun", "position": pos if eco else "non_applicable",
-            "cadrage": "non_applicable", "polarisation": "aucune", "adversaire": "aucun", "victime": "aucune",
-            "acte_discursif": "autre", "registre": "factuel", "chiffres": False, "reactivite": False, "autorite": False,
-            "themes": list(themes)}
+def _vals(eco, pos="neutre", themes=(), procedes=()):
+    from presidentielle import codebook as cb
+    v = {"parle_ecologie": eco, "niveau": "central" if eco else "aucun", "position": pos if eco else "non_applicable",
+         "cadrage": "non_applicable", "polarisation": "aucune", "adversaire": "aucun", "victime": "aucune",
+         "acte_discursif": "autre", "registre": "factuel", "reactivite": False, "themes": list(themes), "procedes": list(procedes),
+         "topoi": [], "legitimation": [], "retardement": [], "vision": "non_applicable", "ethos": "indetermine",
+         "agentivite": "non_applicable", "modalite": "assertion"}
+    assert set(v) == {x.key for x in cb.VARIABLES}
+    return v
 
 
 def test_evaluate_and_run(tmp_data):
-    pairs = [(_vals(True, "favorable_transition", ["climat"]), _vals(True, "favorable_transition", ["climat", "eau"]), 0.9),
+    pairs = [(_vals(True, "favorable_transition", ["climat"], ["hyperbole"]), _vals(True, "favorable_transition", ["climat", "eau"], ["hyperbole"]), 0.9),
              (_vals(True, "critique_ecologie"), _vals(True, "neutre"), 0.8),
              (_vals(False), _vals(False), 0.1),
              (_vals(False), _vals(True), 0.4)]
     ev = evaluate(pairs)
     eco = next(v for v in ev["variables"] if v["variable"] == "parle_ecologie")
     assert eco["n"] == 4 and eco["accord"] == 0.75
+    pos = next(v for v in ev["variables"] if v["variable"] == "position")
+    assert pos["n"] == 2  # variable propre à l'écologie : seuls les tweets écologie pour les deux moteurs
     assert ev["confusions"]["position"]["matrice"]["critique_ecologie"]["neutre"] == 1
-    assert ev["themes_jaccard_moyen"] is not None
+    assert ev["multi"]["themes"]["n"] == 2 and ev["multi"]["themes"]["jaccard_moyen"] == 0.5
+    assert ev["multi"]["procedes"]["n"] == 4  # variable valable pour tous les tweets
+    assert next(v for v in ev["variables"] if v["variable"] == "niveau")["metrique"] == "ordinale"
     assert ev["calibration_ecologie"]["n"] == 4
 
     rows = []

@@ -62,3 +62,16 @@ def test_interrupted_collection_does_not_advance_cursor(tmp_data):
     client.iter_search_all.return_value = iter([_tweet(50), _tweet(40)])
     assert fetch.fetch(client, [CAND]) == 1
     assert fetch.load_json(config.SINCE_STATE_FILE, {})["test"] == "50"
+
+
+def test_unknown_account_is_flagged_not_fatal(tmp_data):
+    client = _client()
+    client.get_user_by_username.side_effect = [XApiError("introuvable", 404), {"id": "9", "username": "b", "name": "B", "protected": False,
+                                                                               "profile_image_url": "https://pbs.twimg.com/x_normal.jpg"}]
+    client.iter_search_all.return_value = iter([_tweet(1)])
+    n = fetch.fetch(client, [config.Candidate(name="A", party="P", handle="a"), config.Candidate(name="B", party="P", handle="b"),
+                             config.Candidate(name="Sans", party="P", handle=None)])
+    users = fetch.load_json(config.USERS_STATE_FILE, {})
+    assert n == 1 and users["a"]["status"] == "introuvable" and users["b"]["status"] == "ok"
+    assert users["b"]["image"].endswith("x_400x400.jpg")
+    assert client.get_user_by_username.call_count == 2  # le compte sans handle n'est pas interrogé

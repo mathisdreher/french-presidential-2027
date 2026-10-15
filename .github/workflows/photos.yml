@@ -1,0 +1,29 @@
+name: Rafraîchir les photos
+
+# Lancement manuel : met à jour config/photos.json depuis Wikipédia et Wikimedia Commons.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  photos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -e .
+      - run: python -m presidentielle photos
+      - name: Enregistrer
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add config/photos.json
+          if git diff --cached --quiet; then echo "Photos inchangées."; exit 0; fi
+          git commit -m "Photos des candidats : mise à jour"
+          git push
