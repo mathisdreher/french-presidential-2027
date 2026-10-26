@@ -201,7 +201,11 @@ FRAMEWORKS = {
         "which set limits to growth, count +1; the Promethean discourse, which denies them, −1; ecological "
         "modernisation and economic rationalism, which bet on green growth and the market, −0.5; other visions 0.",
         "This is an index built for this site, for teaching purposes: it sums up two dimensions among others and "
-        "depends on the quality of the coding. Candidates with fewer than 8 ecology tweets are not placed.",
+        "depends on the quality of the coding. A candidate with fewer than 8 ecology tweets (or fewer than 3 coded on "
+        "growth) is shown faded, as an indication: their position is a weighted average of their tweets and those of "
+        "the other candidates in their political family (a weight of 5 tweets). Below 3 ecology tweets, they are not "
+        "placed. The zone of uncertainty around each candidate covers one standard error of each mean, about two "
+        "samples of tweets out of three.",
     ),
     "echelle_horizon": (
         "Scale and horizon", "Michael Maniates; Reinhart Koselleck; Zygmunt Bauman",

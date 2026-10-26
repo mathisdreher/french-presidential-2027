@@ -27,8 +27,27 @@ phases:
     start: 2027-04-18
     end: 2027-05-02
 
-# Événements exogènes affichés sur les séries temporelles (à compléter au fil de l'étude).
+# Événements politiques affichés sur les séries temporelles et autour desquels on mesure la réaction (à compléter au fil de l'étude).
+# Septembre-octobre 2026 : événements datés d'après les tweets du corpus qui les citent.
 events:
+  - date: 2026-09-15
+    label: ETS2 voté, pêcheurs mobilisés
+    label_en: ETS2 vote, fishers protest
+  - date: 2026-09-17
+    label: Incendies Sud-Ouest
+    label_en: South-west wildfires
+  - date: 2026-09-18
+    label: Plan d'économies
+    label_en: Savings plan
+  - date: 2026-09-22
+    label: Aides carburant
+    label_en: Fuel aid
+  - date: 2026-10-06
+    label: Programme Le Pen
+    label_en: Le Pen programme
+  - date: 2026-10-07
+    label: Stocks carburant, élevage
+    label_en: Fuel reserves, livestock
   - date: 2026-11-09
     label: Ouverture de la COP31
     label_en: COP31 opens

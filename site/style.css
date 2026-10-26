@@ -302,6 +302,18 @@ details.fold summary { cursor: pointer; font-weight: 600; }
 .log-track.dimmed .log-dot { opacity: .35; }
 .log-dot { position: absolute; top: 7px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--surface); z-index: 1; }
 .log-dot.down { background: var(--accent-2); }
+.log-dot.plain { background: var(--ink-2); }
+.log-dot.cri { background: var(--accent-2); }
+.log-dot.fav { background: var(--accent); }
+.log-dot.neu { background: var(--neutral-mark); box-shadow: inset 0 0 0 1.5px var(--muted), 0 0 0 2px var(--surface); }
+.log-dot.sm { top: 8px; width: 12px; height: 12px; margin-left: -6px; }
+.log-tick { position: absolute; top: 4px; height: 20px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--ink-2); }
+.log-track.dimmed .log-tick { opacity: .35; }
+.dot-key { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+.tick-key { width: 2px; height: 13px; border-radius: 1px; display: inline-block; background: var(--ink-2); }
+.block-sub.first { margin-top: 2px; }
+.ev-name { flex-direction: column; align-items: flex-start; gap: 0; font-size: 13px; line-height: 1.25; }
+.ev-date { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .bar-value { margin-left: 8px; font-size: 13px; color: var(--ink-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .div-track { position: relative; height: 28px; border-radius: 6px; }
 .div-track:hover, .div-track:focus-visible { background: var(--wash); }
@@ -428,6 +440,26 @@ svg.mini .series { stroke-width: 1.8; }
 .pt.focus .avatar { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--accent); }
 .pt.near .avatar { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
 .pt.dim { opacity: .4; }
+.pt.fragile .avatar { opacity: .55; filter: grayscale(.5); box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px var(--muted); }
+.pt.fragile.dim { opacity: .3; }
+.compass-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.compass-layer.front { z-index: 5; }
+.fam-hull { opacity: .1; stroke-linejoin: round; stroke-linecap: round; transition: opacity .2s; }
+.fam-hull.dim { opacity: .04; }
+.unc { fill: color-mix(in srgb, var(--ink) 6%, transparent); stroke: var(--ink-2); stroke-width: 1.2; stroke-dasharray: 3 3; opacity: 0; transition: opacity .15s; }
+.unc.on, .unc.hover, .show-unc .unc { opacity: 1; }
+.trail { fill: none; stroke: var(--ink); stroke-width: 2; stroke-dasharray: 5 4; stroke-linecap: round; }
+.trail-dot { fill: var(--surface); stroke: var(--ink); stroke-width: 2; }
+.trail-text { font-size: 11px; font-weight: 600; fill: var(--ink-2); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
+.compass-key { grid-column: 2; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 16px; margin-top: 12px; }
+.compass-key .legend { margin: 0; }
+.check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); cursor: pointer; }
+.moved { margin-top: 16px; }
+.moved-list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 10px; }
+.moved-item { display: grid; grid-template-columns: 32px 1fr; gap: 10px; align-items: start; }
+.moved-item > span { display: grid; gap: 2px; }
+.moved-q { font-size: 13px; color: var(--ink); font-style: italic; }
+.moved-item small { font-size: 12px; color: var(--muted); }
 .pt.you { z-index: 4; cursor: default; }
 .you-pin { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 50%; background: var(--accent-2); color: #fff; font-weight: 800; font-size: 12px; box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--accent-2), var(--shadow-lift); }
 .game .compass-layout { grid-template-columns: minmax(0, 1fr) minmax(220px, 250px); gap: 20px; }
@@ -688,5 +720,6 @@ legend { padding: 0; }
 /* positions dans le temps */
 .pt-panel { font-size: 12px; font-weight: 600; fill: var(--ink-2); }
 .pt-one { stroke: var(--axis); stroke-dasharray: 4 3; }
+.pt-line-st { stroke-width: 1.6; opacity: .9; fill: none !important; }
 .pt-line { stroke: var(--ink-2); }
 .pt-dot { fill: var(--ink-2); stroke: var(--surface); stroke-width: 1.5; }

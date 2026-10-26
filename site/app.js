@@ -449,31 +449,91 @@ function renderSaillance(box, stats) {
     rows.map((s) => [candName(s.key), num(s.n), num(s.eco), pct(s.eco / s.n)]));
 }
 
-// Engagement relatif des tweets écologie, par candidat et par registre (échelle logarithmique centrée sur ×1)
+// Engagement relatif des tweets écologie selon leur position (critique, neutre, favorable) :
+// tous candidats, par candidat, autour des événements politiques, par registre. Échelle logarithmique centrée sur ×1.
+const ENG_STANCES = [["critique_ecologie", "cri", "var(--accent-2)"], ["neutre", "neu", "var(--neutral-mark)"], ["favorable_transition", "fav", "var(--accent)"]];
+const ENG_STANCE_MIN = 3;   // tweets mesurés requis pour placer un point de position
+const EVENT_DAYS = 7;       // fenêtre d'un événement : le jour même et les six suivants
+function engStats(list) {
+  const all = list.map(relEng);
+  return { n: all.length, v: all.length ? median(all) : null,
+    st: ENG_STANCES.map(([k, cls, color]) => { const v = list.filter((tw) => tw.position === k).map(relEng); return { k, cls, color, n: v.length, v: v.length ? median(v) : null }; }) };
+}
+function eventWindows(tweets) {
+  const days = tweets.map((tw) => tw.d).sort();
+  if (!days.length) return [];
+  const first = days[0], last = days[days.length - 1];
+  return (S.data.study.events || []).filter((ev) => ev.date >= first && ev.date <= last).map((ev) => {
+    const end = parseDay(ev.date); end.setUTCDate(end.getUTCDate() + EVENT_DAYS - 1);
+    return { ev, end: isoDay(end), list: tweets.filter((tw) => tw.d >= ev.date && tw.d <= isoDay(end)) };
+  });
+}
 function renderEngagement(box, tweets) {
   box.replaceChildren();
   const eco = tweets.filter((tw) => tw.e && relEng(tw) !== null);
   if (!eco.length) { box.append(el("p", { class: "empty", text: S.engBase.size ? t("eng_empty") : t("eng_pending") })); setTable("engagement", [], []); return; }
-  const group = (list, keyOf) => { const m = new Map(); for (const tw of list) { const k = keyOf(tw); if (!m.has(k)) m.set(k, []); m.get(k).push(relEng(tw)); } return m; };
-  const cand = [...group(eco, (tw) => tw.c)].filter(([, v]) => v.length >= 3).map(([k, v]) => ({ key: k, n: v.length, v: median(v) })).sort((a, b) => b.v - a.v);
-  const reg = V("registre").options.map((o) => ({ key: o.key, list: eco.filter((tw) => tw.registre === o.key).map(relEng) })).filter((r) => r.list.length >= 3)
-    .map((r) => ({ key: r.key, n: r.list.length, v: median(r.list) }));
   const LIM = 2; // de ×1/4 à ×4
   const pos = (v) => 50 + (clamp(Math.log2(Math.max(v, 1e-3)), -LIM, LIM) / LIM) * 46;
-  const row = (name, r, isCand) => {
-    const track = el("div", { class: "log-track" + (isCand && S.focus && S.focus !== r.key ? " dimmed" : ""), "aria-label": t("eng_aria", { name: isCand ? candName(r.key) : name, v: times(r.v) }) },
-      el("span", { class: "log-dot" + (r.v >= 1 ? " up" : " down"), style: `left:${pos(r.v)}%` }),
-      el("span", { class: "seg-label", style: r.v >= 1 ? `left:${pos(r.v) + 2}%` : `right:${100 - pos(r.v) + 2}%`, text: times(r.v) }));
-    hoverable(track, () => ({ title: isCand ? candName(r.key) : name, rows: [{ value: times(r.v), label: t("eng_tt_median") }, { value: num(r.n), label: t("eng_tt_n") }],
-      note: r.n < MIN_N ? t("fragile_eco", { n: MIN_N }) : null }));
-    return el("div", { class: "bar-row" + (isCand && S.focus === r.key ? " is-focus" : "") }, isCand ? barName(r.key, r.n) : el("div", { class: "bar-name", text: name }), track);
+  const stTip = (st) => st.map((s) => ({ value: s.n >= ENG_STANCE_MIN ? times(s.v) : "–", label: `${optLabel("position", s.k)} · ${t("eng_tt_count", { n: num(s.n) })}`, key: s.color, keyShape: "swatch" }));
+  // Ligne à un seul point, coloré par position, avec son étiquette
+  const single = (s) => {
+    const track = el("div", { class: "log-track", "aria-label": t("eng_aria", { name: optLabel("position", s.k), v: times(s.v) }) },
+      el("span", { class: `log-dot ${s.cls}`, style: `left:${pos(s.v)}%` }),
+      el("span", { class: "seg-label", style: s.v >= 1 ? `left:${pos(s.v) + 2}%` : `right:${100 - pos(s.v) + 2}%`, text: times(s.v) }));
+    hoverable(track, () => ({ title: optLabel("position", s.k), rows: [{ value: times(s.v), label: t("eng_tt_median") }, { value: num(s.n), label: t("eng_tt_n") }],
+      note: s.n < MIN_N ? t("fragile_eco", { n: MIN_N }) : null }));
+    return el("div", { class: "bar-row" }, el("div", { class: "bar-name" }, el("span", { class: `swatch ${s.cls}`, style: `background:${s.color}` }), optLabel("position", s.k)), track);
+  };
+  // Ligne à trois points (une position chacun) et un trait pour l'ensemble
+  const multi = (nameNode, title, r, extra = {}) => {
+    const shown = r.st.filter((s) => s.n >= ENG_STANCE_MIN);
+    const track = el("div", { class: "log-track multi" + (extra.dim ? " dimmed" : ""), "aria-label": t("eng_aria_multi", { name: title, v: times(r.v),
+      detail: shown.map((s) => `${optLabel("position", s.k)} ${times(s.v)}`).join(", ") || t("eng_too_few") }) },
+      el("span", { class: "log-tick", style: `left:${pos(r.v)}%` }),
+      ...shown.map((s) => el("span", { class: `log-dot sm ${s.cls}`, style: `left:${pos(s.v)}%` })));
+    hoverable(track, () => ({ title, rows: [{ value: times(r.v), label: t("eng_all_eco", { n: num(r.n) }) }, ...stTip(r.st)],
+      note: [extra.note, r.n < MIN_N ? t("fragile_eco", { n: MIN_N }) : null].filter(Boolean).join(" ") || null }));
+    return el("div", { class: "bar-row" + (extra.focus ? " is-focus" : "") }, nameNode, track);
   };
   const axis = () => el("div", { class: "div-axis" }, el("span"), el("div", { class: "div-axis-inner" }, el("span", { text: t("eng_axis_less") }), el("span", { text: "×1" }), el("span", { text: t("eng_axis_more") })));
-  box.append(el("div", { class: "bars" }, cand.map((r) => row(null, r, true))), axis());
-  if (reg.length) box.append(el("h3", { class: "block-sub", text: t("eng_by_register") }), el("div", { class: "bars" }, reg.map((r) => row(optLabel("registre", r.key), r, false))), axis());
+  const legend = () => el("div", { class: "legend" }, ENG_STANCES.map(([k, cls, color]) => el("span", { class: "key" }, el("span", { class: "dot-key", style: `background:${color}` }), optLabel("position", k))),
+    el("span", { class: "key" }, el("span", { class: "tick-key" }), t("eng_key_all")));
+
+  // 1. Selon la position, tous candidats confondus
+  const overall = engStats(eco);
+  const stances = overall.st.filter((s) => s.n >= ENG_STANCE_MIN);
+  box.append(el("h3", { class: "block-sub first", text: t("eng_by_stance") }), el("div", { class: "bars" }, stances.map(single)), axis());
+
+  // 2. Par candidat
+  const cand = [...new Set(eco.map((tw) => tw.c))].map((k) => ({ key: k, ...engStats(eco.filter((tw) => tw.c === k)) })).filter((r) => r.n >= 3).sort((a, b) => b.v - a.v);
+  box.append(el("h3", { class: "block-sub", text: t("eng_by_cand") }), legend(),
+    el("div", { class: "bars" }, cand.map((r) => multi(barName(r.key, r.n), candName(r.key), r, { focus: S.focus === r.key, dim: S.focus && S.focus !== r.key }))), axis());
+
+  // 3. Autour des événements politiques
+  const evs = eventWindows(eco).map((w) => ({ ...w, ...engStats(w.list) })).filter((w) => w.n >= ENG_STANCE_MIN);
+  if (evs.length) box.append(el("h3", { class: "block-sub", text: t("eng_by_event", { d: EVENT_DAYS }) }),
+    el("div", { class: "bars" }, evs.map((w) => multi(el("div", { class: "bar-name ev-name" }, el("span", { class: "ev-date", text: fmtShort(w.ev.date) }), el("span", { text: L(w.ev, "label") })),
+      L(w.ev, "label"), w, { note: t("eng_event_window", { a: fmtDay(w.ev.date), b: fmtDay(w.end) }) }))), axis());
+
+  // 4. Selon le registre émotionnel
+  const reg = V("registre").options.map((o) => ({ key: o.key, list: eco.filter((tw) => tw.registre === o.key).map(relEng) })).filter((r) => r.list.length >= 3)
+    .map((r) => ({ key: r.key, n: r.list.length, v: median(r.list) }));
+  if (reg.length) box.append(el("h3", { class: "block-sub", text: t("eng_by_register") }), el("div", { class: "bars" }, reg.map((r) => {
+    const track = el("div", { class: "log-track", "aria-label": t("eng_aria", { name: optLabel("registre", r.key), v: times(r.v) }) },
+      el("span", { class: "log-dot plain", style: `left:${pos(r.v)}%` }),
+      el("span", { class: "seg-label", style: r.v >= 1 ? `left:${pos(r.v) + 2}%` : `right:${100 - pos(r.v) + 2}%`, text: times(r.v) }));
+    hoverable(track, () => ({ title: optLabel("registre", r.key), rows: [{ value: times(r.v), label: t("eng_tt_median") }, { value: num(r.n), label: t("eng_tt_n") }] }));
+    return el("div", { class: "bar-row" }, el("div", { class: "bar-name", text: optLabel("registre", r.key) }), track);
+  })), axis());
   box.append(el("p", { class: "note-small", text: t("eng_note", { n: ENG_MIN }) }));
-  setTable("engagement", [{ label: t("th_candidate") }, { label: t("eng_th_n"), num: true }, { label: t("eng_th_median"), num: true }],
-    [...cand.map((r) => [candName(r.key), num(r.n), times(r.v)]), ...reg.map((r) => [optLabel("registre", r.key), num(r.n), times(r.v)])]);
+
+  const cell = (s) => (s.n >= ENG_STANCE_MIN ? `${times(s.v)} (${num(s.n)})` : "–");
+  setTable("engagement", [{ label: t("eng_th_row") }, { label: t("eng_th_n"), num: true }, { label: t("eng_th_median"), num: true },
+    ...ENG_STANCES.map(([k]) => ({ label: optLabel("position", k), num: true }))],
+    [[t("eng_all_row"), num(overall.n), times(overall.v), ...overall.st.map(cell)],
+     ...cand.map((r) => [candName(r.key), num(r.n), times(r.v), ...r.st.map(cell)]),
+     ...evs.map((w) => [`${fmtShort(w.ev.date)} · ${L(w.ev, "label")}`, num(w.n), times(w.v), ...w.st.map(cell)]),
+     ...reg.map((r) => [optLabel("registre", r.key), num(r.n), times(r.v), "", "", ""])]);
 }
 
 function renderPosition(box, stats) {
@@ -626,12 +686,13 @@ function renderPositionTime(box, legend, tweets) {
   if (!subj.some((tw) => tw.e)) { legend.replaceChildren(); box.append(el("p", { class: "empty", text: t("empty_eco_period") })); setTable("position-temps", [], []); return; }
   const weeks = new Map();
   for (const tw of subj) {
-    const w = weekStart(tw.d), s = weeks.get(w) || { n: 0, eco: 0, fav: 0, neu: 0, cri: 0, rel: [] };
+    const w = weekStart(tw.d), s = weeks.get(w) || { n: 0, eco: 0, fav: 0, neu: 0, cri: 0, rel: [], relFav: [], relCri: [] };
     s.n++;
     if (tw.e) {
       s.eco++;
       if (tw.position === "favorable_transition") s.fav++; else if (tw.position === "critique_ecologie") s.cri++; else s.neu++;
-      const r = relEng(tw); if (r !== null) s.rel.push(r);
+      const r = relEng(tw);
+      if (r !== null) { s.rel.push(r); if (tw.position === "favorable_transition") s.relFav.push(r); else if (tw.position === "critique_ecologie") s.relCri.push(r); }
     }
     weeks.set(w, s);
   }
@@ -639,7 +700,9 @@ function renderPositionTime(box, legend, tweets) {
   const STANCES = [["fav", "favorable_transition", t("th_favorable")], ["neu", "neutre", t("th_neutral")], ["cri", "critique_ecologie", t("th_critical")]];
   legend.replaceChildren(el("span", { class: "legend-title", text: name }),
     ...STANCES.map(([, k, label]) => el("span", { class: "key" }, el("span", { class: "swatch", style: `background:${POS_COLOR[k]}` }), label)),
-    el("span", { class: "key" }, el("span", { class: "linekey", style: "background:var(--ink-2)" }), t("pt_reaction")));
+    el("span", { class: "key" }, el("span", { class: "linekey", style: "background:var(--ink-2)" }), t("pt_reaction")),
+    el("span", { class: "key" }, el("span", { class: "linekey", style: `background:${POS_COLOR.critique_ecologie}` }), t("pt_reaction_cri")),
+    el("span", { class: "key" }, el("span", { class: "linekey", style: `background:${POS_COLOR.favorable_transition}` }), t("pt_reaction_fav")));
   // trois bandes alignées : positions (100 %), volume, réaction (échelle logarithmique autour de ×1)
   const W = Math.max(320, box.clientWidth || 640), m = { t: 26, r: 16, b: 26, l: 52 }, P1 = 150, P2 = 64, P3 = 104, GAP = 26;
   const H = m.t + P1 + GAP + P2 + GAP + P3 + m.b, iw = W - m.l - m.r;
@@ -677,15 +740,21 @@ function renderPositionTime(box, legend, tweets) {
   const LMAX = 3; // de ×1/8 à ×8
   const ry = (v) => y3 + P3 / 2 - (Math.max(-LMAX, Math.min(LMAX, Math.log2(v))) / LMAX) * (P3 / 2);
   for (const v of [0.25, 1, 4]) { root.append(svg("line", { class: v === 1 ? "pt-one" : "grid-line", x1: m.l, x2: W - m.r, y1: ry(v), y2: ry(v) })); axis(times(v), ry(v)); }
-  let d = "", pen = false;
-  full.forEach((w, i) => {
-    const s = weeks.get(w);
-    if (!s || s.rel.length < 2) { pen = false; return; }
-    const v = median(s.rel), px = x(i), py = ry(v);
-    d += (pen ? "L" : "M") + px.toFixed(1) + "," + py.toFixed(1); pen = true;
-    root.append(svg("circle", { cx: px, cy: py, r: 3.2, class: "pt-dot" }));
-  });
-  root.append(svg("path", { class: "series pt-line", d }));
+  // réaction aux tweets critiques et favorables (au moins deux tweets mesurés dans la semaine), puis à l'ensemble
+  const line = (field, cls, style) => {
+    let d = "", pen = false;
+    full.forEach((w, i) => {
+      const s = weeks.get(w);
+      if (!s || s[field].length < 2) { pen = false; return; }
+      const px = x(i), py = ry(median(s[field]));
+      d += (pen ? "L" : "M") + px.toFixed(1) + "," + py.toFixed(1); pen = true;
+      root.append(svg("circle", { cx: px, cy: py, r: field === "rel" ? 3.2 : 2.6, class: "pt-dot", style }));
+    });
+    root.append(svg("path", { class: "series " + cls, d, style }));
+  };
+  line("relCri", "pt-line-st", `stroke:${POS_COLOR.critique_ecologie};fill:${POS_COLOR.critique_ecologie}`);
+  line("relFav", "pt-line-st", `stroke:${POS_COLOR.favorable_transition};fill:${POS_COLOR.favorable_transition}`);
+  line("rel", "pt-line");
   // axe du temps et événements, sur les trois bandes
   const every = Math.max(1, Math.ceil(full.length / Math.floor(iw / 70)));
   full.forEach((w, i) => { if (i % every) return; const tx = svg("text", { class: "axis-text", x: x(i), y: H - 6, "text-anchor": "middle" }); tx.textContent = fmtShort(w); root.append(tx); });
@@ -701,10 +770,12 @@ function renderPositionTime(box, legend, tweets) {
   root.append(cross, hit);
   const at = (i) => {
     cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
-    const w = full[i], s = weeks.get(w) || { n: 0, eco: 0, fav: 0, neu: 0, cri: 0, rel: [] };
+    const w = full[i], s = weeks.get(w) || { n: 0, eco: 0, fav: 0, neu: 0, cri: 0, rel: [], relFav: [], relCri: [] };
     const rows = s.eco ? STANCES.map(([f, k, lab]) => ({ value: pct(s[f] / s.eco, 0), label: `${lab} (${s[f]})`, key: POS_COLOR[k], keyShape: "swatch" })) : [];
     rows.push({ value: num(s.n), label: t("pt_tt_volume", { eco: num(s.eco) }) });
     if (s.rel.length >= 2) rows.push({ value: times(median(s.rel)), label: t("pt_tt_reaction", { n: s.rel.length }) });
+    if (s.relCri.length >= 2) rows.push({ value: times(median(s.relCri)), label: t("pt_tt_reaction_cri", { n: s.relCri.length }), key: POS_COLOR.critique_ecologie });
+    if (s.relFav.length >= 2) rows.push({ value: times(median(s.relFav)), label: t("pt_tt_reaction_fav", { n: s.relFav.length }), key: POS_COLOR.favorable_transition });
     return { title: t("week_of", { date: fmtDay(w) }), rows, note: s.eco && s.eco < PT_MIN ? t("pt_few") : null };
   };
   let cur = full.length - 1;
@@ -716,9 +787,11 @@ function renderPositionTime(box, legend, tweets) {
   hit.addEventListener("keydown", (e) => { if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return; e.preventDefault(); cur = Math.max(0, Math.min(full.length - 1, cur + (e.key === "ArrowRight" ? 1 : -1))); show(e, hit); });
   box.append(root);
   setTable("position-temps", [{ label: t("th_week") }, { label: t("th_tweets"), num: true }, { label: t("th_eco_tweets"), num: true },
-    { label: t("th_favorable"), num: true }, { label: t("th_neutral"), num: true }, { label: t("th_critical"), num: true }, { label: t("pt_reaction"), num: true }],
-    full.map((w) => { const s = weeks.get(w) || { n: 0, eco: 0, fav: 0, neu: 0, cri: 0, rel: [] };
-      return [fmtDay(w), num(s.n), num(s.eco), ...["fav", "neu", "cri"].map((f) => (s.eco ? pct(s[f] / s.eco, 0) : "–")), s.rel.length >= 2 ? times(median(s.rel)) : "–"]; }));
+    { label: t("th_favorable"), num: true }, { label: t("th_neutral"), num: true }, { label: t("th_critical"), num: true }, { label: t("pt_reaction"), num: true },
+    { label: t("pt_reaction_cri"), num: true }, { label: t("pt_reaction_fav"), num: true }],
+    full.map((w) => { const s = weeks.get(w) || { n: 0, eco: 0, fav: 0, neu: 0, cri: 0, rel: [], relFav: [], relCri: [] };
+      const med = (a) => (a.length >= 2 ? times(median(a)) : "–");
+      return [fmtDay(w), num(s.n), num(s.eco), ...["fav", "neu", "cri"].map((f) => (s.eco ? pct(s[f] / s.eco, 0) : "–")), med(s.rel), med(s.relCri), med(s.relFav)]; }));
 }
 // Petits multiples : une courbe par candidat, sur une échelle commune, avec l'ensemble en gris
 function renderEvolutionGrid(box, full, all, perCand) {
@@ -838,20 +911,51 @@ function distribution(stats, variable, ecologyOnly) {
 }
 
 /* =================================================================== boussole */
-// Position moyenne (+1 favorable, -1 critique, 0 sinon) et rapport moyen à la croissance (Dryzek)
+// Position moyenne (+1 favorable, -1 critique, 0 sinon) et rapport moyen à la croissance (Dryzek).
+// Un candidat avec peu de tweets écologie est placé quand même, en pâle : sa position est rapprochée de celle de sa famille
+// politique (moyenne pondérée, poids COMPASS_PRIOR), pour qu'une poignée de tweets ne le mette pas à un extrême.
+const COMPASS_FRAGILE_MIN = 3;  // tweets écologie requis pour apparaître, même en pâle
+const COMPASS_PRIOR = 5;        // poids de la famille politique pour un candidat peu fourni
+const sdev = (xs) => { if (xs.length < 2) return null; const m = xs.reduce((a, b) => a + b, 0) / xs.length; return Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / (xs.length - 1)); };
+function compassPoint(eco, growth) {
+  const sx = eco.map((tw) => STANCE[tw.position] || 0), gy = eco.filter((tw) => tw.vision in growth).map((tw) => growth[tw.vision]);
+  return { n: sx.length, nv: gy.length, sumX: sx.reduce((a, b) => a + b, 0), sumY: gy.reduce((a, b) => a + b, 0), sdX: sdev(sx), sdY: sdev(gy) };
+}
 function compassRows(tweets) {
   const growth = growthMap();
+  const ecoAll = tweets.filter((tw) => tw.e);
+  const bloc = (k) => (S.cand.get(k) || {}).bloc;
   const rows = [], skipped = [];
   for (const s of byCandidate(tweets)) {
     const eco = s.tweets.filter((tw) => tw.e);
     if (!eco.length) continue;
-    const withVision = eco.filter((tw) => tw.vision in growth);
-    if (eco.length < COMPASS_MIN || withVision.length < COMPASS_MIN_VISION) { skipped.push(s.key); continue; }
-    const top = topOf(withVision, "vision");
-    rows.push({ key: s.key, n: eco.length, x: mean(eco, (tw) => STANCE[tw.position] || 0), y: mean(withVision, (tw) => growth[tw.vision]), vision: top ? top.key : null });
+    if (eco.length < COMPASS_FRAGILE_MIN) { skipped.push(s.key); continue; }
+    const p = compassPoint(eco, growth);
+    const fragile = p.n < COMPASS_MIN || p.nv < COMPASS_MIN_VISION;
+    let x = p.sumX / p.n, y = p.nv ? p.sumY / p.nv : 0;
+    if (fragile) {
+      // a priori : les autres candidats de la même famille, sinon l'ensemble des tweets affichés
+      const others = ecoAll.filter((tw) => tw.c !== s.key && bloc(tw.c) === bloc(s.key));
+      const prior = compassPoint(others.length >= COMPASS_MIN ? others : ecoAll.filter((tw) => tw.c !== s.key), growth);
+      const px = prior.n ? prior.sumX / prior.n : 0, py = prior.nv ? prior.sumY / prior.nv : 0;
+      x = (p.sumX + COMPASS_PRIOR * px) / (p.n + COMPASS_PRIOR);
+      y = (p.sumY + COMPASS_PRIOR * py) / (p.nv + COMPASS_PRIOR);
+    }
+    // erreur type de chaque moyenne : la zone d'incertitude couvre environ deux échantillons sur trois
+    const ex = p.sdX !== null ? p.sdX / Math.sqrt(p.n) : 0.5, ey = p.sdY !== null && p.nv ? p.sdY / Math.sqrt(p.nv) : 0.5;
+    const withVision = eco.filter((tw) => tw.vision in growth), top = topOf(withVision, "vision");
+    rows.push({ key: s.key, n: p.n, nv: p.nv, x, y, ex, ey, fragile, vision: top ? top.key : null });
   }
   return { rows, skipped };
 }
+// Trajectoire mensuelle d'un candidat (mois avec assez de tweets pour une position et un rapport à la croissance)
+function compassTrail(tweets, key) {
+  const growth = growthMap(), m = new Map();
+  for (const tw of tweets) if (tw.e && tw.c === key) { const k = tw.d.slice(0, 7); if (!m.has(k)) m.set(k, []); m.get(k).push(tw); }
+  return [...m].sort(([a], [b]) => a.localeCompare(b)).map(([k, list]) => ({ k, p: compassPoint(list, growth) }))
+    .filter(({ p }) => p.n >= COMPASS_FRAGILE_MIN && p.nv >= 2).map(({ k, p }) => ({ month: k, n: p.n, x: p.sumX / p.n, y: p.sumY / p.nv }));
+}
+const fmtMonth = (k) => new Intl.DateTimeFormat(LANG === "en" ? "en-GB" : "fr-FR", { month: "short", timeZone: "UTC" }).format(parseDay(k + "-01"));
 function compassFrame() {
   return el("div", { class: "compass-wrap" },
     el("div", { class: "y-top", text: t("compass_y_top") }),
@@ -865,16 +969,17 @@ function drawCompass(wrap, rows, opts = {}) {
   const box = $(".compass", wrap);
   const W = box.clientWidth || 360;
   const size = W < 340 ? 26 : W < 460 ? 30 : 36;
-  const pts = rows.map((r) => ({ r, s: size }));
+  // taille de l'avatar selon le nombre de tweets écologie : de 80 % à 125 % de la taille de base
+  const maxN = Math.max(...rows.map((r) => r.n), 1);
+  const pts = rows.map((r) => ({ r, s: Math.round(size * (0.8 + 0.45 * Math.sqrt(r.n / maxN))) }));
   if (opts.you) pts.push({ r: { key: "", ...opts.you }, s: 46, fixed: true });
-  // Domaine symétrique autour de zéro, ajusté aux points, par pas de 0,25
+  const trail = opts.trail && opts.trail.length >= 2 ? opts.trail : [];
+  // Domaine symétrique autour de zéro, ajusté aux points (et à la trajectoire), par pas de 0,25
   const span = (vals) => Math.min(1, Math.max(0.25, Math.ceil(Math.max(...vals.map(Math.abs)) * 1.15 * 4) / 4));
-  const dx = span(pts.map((p) => p.r.x)), dy = span(pts.map((p) => p.r.y));
-  for (const p of pts) {
-    p.pad = (p.s / 2 + 3) / W;
-    p.px = p.pad + ((p.r.x + dx) / (2 * dx)) * (1 - 2 * p.pad);
-    p.py = p.pad + ((dy - p.r.y) / (2 * dy)) * (1 - 2 * p.pad);
-  }
+  const dx = span([...pts.map((p) => p.r.x), ...trail.map((p) => p.x)]), dy = span([...pts.map((p) => p.r.y), ...trail.map((p) => p.y)]);
+  const pad = (size / 2 + 3) / W;
+  const fx = (v) => pad + ((v + dx) / (2 * dx)) * (1 - 2 * pad), fy = (v) => pad + ((dy - v) / (2 * dy)) * (1 - 2 * pad);
+  for (const p of pts) { p.pad = (p.s / 2 + 3) / W; p.px = p.ox = fx(p.r.x); p.py = p.oy = fy(p.r.y); }
   // Écarte les avatars qui se chevauchent, sans déplacer le point « Vous »
   for (let it = 0; it < 120; it++) {
     let moved = false;
@@ -894,22 +999,68 @@ function drawCompass(wrap, rows, opts = {}) {
     if (!moved) break;
   }
   const focus = opts.interactive ? S.focus : "";
-  box.replaceChildren(...pts.map((p) => {
+  // Calque de fond : familles politiques, zones d'incertitude, trajectoire
+  const layer = svg("svg", { class: "compass-layer", viewBox: `0 0 ${W} ${W}`, "aria-hidden": "true" });
+  if (opts.families !== false) {
+    const fam = new Map();
+    for (const p of pts) { if (p.fixed) continue; const b = (S.cand.get(p.r.key) || {}).bloc; if (!b) continue; if (!fam.has(b)) fam.set(b, []); fam.get(b).push(p); }
+    for (const [b, list] of fam) {
+      if (list.length < 2) continue;
+      const hull = convexHull(list.map((p) => [p.px * W, p.py * W]));
+      const d = "M" + hull.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join("L") + (hull.length > 2 ? "Z" : "");
+      const color = BLOC_COLOR[b] || "#8a8a84";
+      layer.append(svg("path", { class: "fam-hull" + (focus && (S.cand.get(focus) || {}).bloc !== b ? " dim" : ""), d, style: `fill:${color};stroke:${color};stroke-width:${size + 12}px` }));
+    }
+  }
+  const ellipses = new Map();
+  for (const p of pts) {
+    if (p.fixed) continue;
+    const rx = (p.r.ex / (2 * dx)) * (1 - 2 * pad) * W, ry = (p.r.ey / (2 * dy)) * (1 - 2 * pad) * W;
+    const e = svg("ellipse", { class: "unc" + (focus === p.r.key ? " on" : ""), cx: (p.ox * W).toFixed(1), cy: (p.oy * W).toFixed(1), rx: rx.toFixed(1), ry: ry.toFixed(1) });
+    layer.append(e); ellipses.set(p.r.key, e);
+  }
+  // trajectoire au premier plan, au-dessus des avatars
+  const front = svg("svg", { class: "compass-layer front", viewBox: `0 0 ${W} ${W}`, "aria-hidden": "true" });
+  if (trail.length) {
+    const tp = trail.map((q) => [fx(q.x) * W, fy(q.y) * W]);
+    front.append(svg("path", { class: "trail", d: "M" + tp.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join("L") }));
+    tp.forEach(([x, y], i) => {
+      front.append(svg("circle", { class: "trail-dot", cx: x.toFixed(1), cy: y.toFixed(1), r: 4.5 }));
+      const tx = svg("text", { class: "trail-text", x: (x + 8).toFixed(1), y: (y - 9).toFixed(1) }); tx.textContent = fmtMonth(trail[i].month); front.append(tx);
+    });
+  }
+  box.replaceChildren(layer, ...pts.map((p) => {
     const style = `left:${(p.px * 100).toFixed(2)}%;top:${(p.py * 100).toFixed(2)}%`;
     if (p.fixed) return el("div", { class: "pt you", style, role: "img", "aria-label": t("you_aria", { x: signed(p.r.x), y: signed(p.r.y) }) }, el("span", { class: "you-pin", text: t("you") }));
     const r = p.r;
-    const cls = "pt" + (focus === r.key ? " focus" : focus ? " dim" : "") + (opts.near && opts.near.has(r.key) ? " near" : "");
+    const cls = "pt" + (focus === r.key ? " focus" : focus ? " dim" : "") + (opts.near && opts.near.has(r.key) ? " near" : "") + (r.fragile ? " fragile" : "");
     const node = el(opts.interactive ? "button" : "span", { class: cls, type: opts.interactive ? "button" : null, style,
-      "aria-label": t("compass_aria_pt", { name: candName(r.key), x: signed(r.x), y: signed(r.y) }), "aria-pressed": opts.interactive ? String(focus === r.key) : null }, avatar(r.key, p.s));
+      "aria-label": t(r.fragile ? "compass_aria_pt_fragile" : "compass_aria_pt", { name: candName(r.key), x: signed(r.x), y: signed(r.y) }), "aria-pressed": opts.interactive ? String(focus === r.key) : null }, avatar(r.key, p.s));
     hoverable(node, () => ({ title: candName(r.key), rows: [{ value: signed(r.x), label: t("compass_tt_x") }, { value: signed(r.y), label: t("compass_tt_y") }],
-      note: [tn("n_eco_tweets", r.n), r.vision ? t("kv", { k: t("th_vision"), v: optLabel("vision", r.vision) }) : null].filter(Boolean).join(" · ") }));
+      note: [tn("n_eco_tweets", r.n), blocLabel((S.cand.get(r.key) || {}).bloc), r.vision ? t("kv", { k: t("th_vision"), v: optLabel("vision", r.vision) }) : null,
+        r.fragile ? t("compass_tt_fragile") : null].filter(Boolean).join(" · ") }));
+    const e = ellipses.get(r.key);
+    if (e) { const on = () => e.classList.add("hover"), off = () => e.classList.remove("hover");
+      node.addEventListener("pointerenter", on); node.addEventListener("pointerleave", off); node.addEventListener("focus", on); node.addEventListener("blur", off); }
     if (opts.interactive) node.addEventListener("click", () => setFilter({ focus: S.focus === r.key ? "" : r.key }, "#boussole"));
     return node;
-  }));
+  }), front);
+}
+// Légende des familles présentes et interrupteur des zones d'incertitude
+function compassKey(wrap, rows) {
+  const blocs = (S.data.study.blocs || []).filter((b) => rows.filter((r) => (S.cand.get(r.key) || {}).bloc === b.key).length >= 2);
+  const box = $(".compass", wrap);
+  const toggle = el("label", { class: "check" }, el("input", { type: "checkbox", checked: S.compassUnc ? true : null,
+    onchange: (e) => { S.compassUnc = e.target.checked; box.classList.toggle("show-unc", S.compassUnc); } }), t("compass_unc_toggle"));
+  box.classList.toggle("show-unc", !!S.compassUnc);
+  return el("div", { class: "compass-key" },
+    blocs.length ? el("div", { class: "legend" }, blocs.map((b) => el("span", { class: "key" }, el("span", { class: "swatch", style: `background:${BLOC_COLOR[b.key] || "#8a8a84"};opacity:.55` }), L(b, "label")))) : null,
+    toggle);
 }
 function compassTable(id, rows) {
-  setTable(id, [{ label: t("th_candidate") }, { label: t("th_eco_tweets"), num: true }, { label: t("th_stance"), num: true }, { label: t("th_growth"), num: true }, { label: t("th_vision") }],
-    [...rows].sort((a, b) => b.x - a.x).map((r) => [candName(r.key), num(r.n), signed(r.x), signed(r.y), r.vision ? optLabel("vision", r.vision) : "–"]));
+  setTable(id, [{ label: t("th_candidate") }, { label: t("th_eco_tweets"), num: true }, { label: t("th_stance"), num: true }, { label: t("th_growth"), num: true }, { label: t("compass_th_margin"), num: true }, { label: t("th_vision") }],
+    [...rows].sort((a, b) => b.x - a.x).map((r) => [candName(r.key) + (r.fragile ? ` (${t("compass_fragile_short")})` : ""), num(r.n), signed(r.x), signed(r.y),
+      `± ${f2(r.ex)} / ± ${f2(r.ey)}`, r.vision ? optLabel("vision", r.vision) : "–"]));
 }
 
 /* =================================================================== onglet Aperçu */
@@ -1001,9 +1152,14 @@ function renderApercu(panel) {
   const stats = byCandidate(tweets);
   panel.replaceChildren(sectionIntro(t("apercu_title"), t("apercu_intro")), stripCard(), S.focus ? profileCard() : null, kpis(tweets));
   const { rows, skipped } = compassRows(tweets);
+  const trail = S.focus ? compassTrail(tweets, S.focus) : [];
   const wrap = rows.length ? compassFrame() : null;
+  if (wrap) wrap.append(compassKey(wrap, rows));
   const side = el("div", { class: "compass-side" },
     el("h3", { text: t("compass_read") }), el("p", { text: t("compass_read_1") }), el("p", { text: t("compass_read_2") }), el("p", { class: "note-small", text: t("compass_read_3") }),
+    rows.some((r) => r.fragile) ? el("p", { class: "note-small", text: t("compass_read_fragile") }) : null,
+    el("p", { class: "note-small", text: t("compass_read_unc") }),
+    S.focus && trail.length >= 2 ? el("p", { class: "note-small", text: t("compass_read_trail", { name: candName(S.focus) }) }) : null,
     skipped.length ? el("p", { class: "note-small", text: t("compass_unplaced", { names: skipped.map(candName).join(", ") }) }) : null,
     S.focus ? el("p", {}, el("a", { href: "#profile", onclick: (e) => { e.preventDefault(); const n = $("#profile"); if (n) n.scrollIntoView({ block: "start", behavior: smooth() }); } },
       t("compass_see_profile", { name: candName(S.focus) }))) : null,
@@ -1025,7 +1181,7 @@ function renderApercu(panel) {
     el("button", { class: "tab", type: "button", role: "tab", "aria-selected": String(S.apercuHeat === k), text: label, onclick: () => { S.apercuHeat = k; render(); } })));
   const heat = card("apercu-heat", t("heat_title"), S.apercuHeat === "themes" ? "macro" : "cadrage", S.apercuHeat === "stance" ? t("heat_sub_stance") : t("heat_sub"), tabs, heatBox);
   panel.append(compass, sail, pos, eng, evo, pt, heat);
-  if (wrap) { drawCompass(wrap, rows, { interactive: true }); compassTable("boussole", rows); } else setTable("boussole", [], []);
+  if (wrap) { drawCompass(wrap, rows, { interactive: true, trail }); compassTable("boussole", rows); } else setTable("boussole", [], []);
   renderSaillance(sail.querySelector(".chart"), stats);
   renderPosition(pos.querySelector(".chart"), stats);
   renderEngagement(eng.querySelector(".chart"), tweets);
@@ -2175,7 +2331,16 @@ function renderSituer(box, P) {
     return;
   }
   const you = { x: mean(rated, (r) => r.r * STANCE[r.it.codes.position]), y: mean(rated, (r) => r.r * growth[r.it.codes.vision]) };
-  const ranked = rows.map((r) => ({ ...r, d: Math.hypot(r.x - you.x, r.y - you.y) })).sort((a, b) => a.d - b.d);
+  // Comparaison avec les candidats bien placés seulement (assez de tweets écologie)
+  const solid = rows.filter((r) => !r.fragile);
+  const ranked = (solid.length >= 2 ? solid : rows).map((r) => ({ ...r, d: Math.hypot(r.x - you.x, r.y - you.y) })).sort((a, b) => a.d - b.d);
+  // Les tweets qui ont le plus déplacé le point « Vous »
+  const moved = rated.map((r) => ({ r, dx: (r.r * STANCE[r.it.codes.position]) / rated.length, dy: (r.r * growth[r.it.codes.vision]) / rated.length }))
+    .filter((m) => m.dx || m.dy).sort((a, b) => Math.hypot(b.dx, b.dy) - Math.hypot(a.dx, a.dy)).slice(0, 3);
+  const dirText = (m) => [m.dx > 0 ? t("dir_right") : m.dx < 0 ? t("dir_left") : null, m.dy > 0 ? t("dir_up") : m.dy < 0 ? t("dir_down") : null].filter(Boolean).join(t("dir_and"));
+  const movedItem = (m) => { const txt = itemText(m.r.it); return el("li", { class: "moved-item" }, avatar(m.r.it.c, 32),
+    el("span", {}, el("span", { class: "moved-q", text: `« ${txt.length > 120 ? txt.slice(0, 118).trimEnd() + "…" : txt} »` }),
+      el("small", { text: t(m.r.r > 0 ? "situer_moved_agree" : "situer_moved_disagree", { name: candName(m.r.it.c), dir: dirText(m) }) }))); };
   const near = ranked.slice(0, 3), far = ranked[ranked.length - 1];
   const visions = V("vision").options.map((o) => o.key).filter((k) => k in growth);
   const uv = visions.map((k) => rated.reduce((a, r) => a + (r.it.codes.vision === k ? r.r : 0), 0));
@@ -2189,10 +2354,12 @@ function renderSituer(box, P) {
       el("h3", { text: t("situer_near") }), el("div", { class: "near-list" }, near.map(nearItem)),
       far && !near.includes(far) ? [el("h3", { class: "block-sub", text: t("situer_far") }), el("div", { class: "near-list" }, nearItem(far))] : null,
       uv[best] > 0 ? el("p", {}, t("situer_vision_pre"), " ", el("strong", { text: optLabel("vision", visions[best]).toLowerCase() }), t("colon"), visionDef(visions[best]), " ", infoBtn("visions")) : null)),
+    moved.length ? el("div", { class: "moved" }, el("h3", { text: t("situer_moved") }), el("ul", { class: "moved-list" }, moved.map(movedItem))) : null,
     el("div", { class: "table-view", id: "situer-table", hidden: !S.openTables.has("situer") }));
   box.append(result, el("section", { class: "card end" }, el("p", { class: "eyebrow", text: t("game_over") }), el("p", { class: "disclaimer", text: t("situer_disclaimer") }), endButtons("situer", t("share_situer"))),
     recapCard(P.rounds.map((r) => ({ c: r.it.c, text: itemText(r.it), res: "", label: reactionText(r.r) }))),
     theoriesCard(["boussole", "visions", "cadrage"]));
+  wrap.append(compassKey(wrap, rows));
   drawCompass(wrap, rows, { you, near: new Set(near.map((r) => r.key)) });
   compassTable("situer", rows);
 }

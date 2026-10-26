@@ -210,8 +210,11 @@ FRAMEWORKS: tuple[Framework, ...] = (
         "écologique et le rationalisme économique, qui misent sur la croissance verte et le marché, −0,5 ; "
         "les autres visions 0.",
         "C'est un indice construit pour ce site, à visée pédagogique : il résume deux dimensions parmi "
-        "d'autres et dépend de la qualité du codage. Les candidats qui ont moins de 8 tweets écologie ne "
-        "sont pas placés.",
+        "d'autres et dépend de la qualité du codage. Un candidat qui a moins de 8 tweets écologie (ou moins "
+        "de 3 codés sur la croissance) est placé en pâle, à titre indicatif : sa position est une moyenne "
+        "pondérée entre ses tweets et ceux des autres candidats de sa famille politique (poids de 5 tweets). "
+        "Sous 3 tweets écologie, il n'est pas placé. La zone d'incertitude autour de chaque candidat couvre "
+        "une erreur type de chaque moyenne, soit environ deux échantillons de tweets sur trois.",
         (Ref("Dryzek, J. S. (2013). The Politics of the Earth: Environmental Discourses, 3e éd. Oxford : Oxford University Press."),),
     ),
     Framework(
