@@ -55,6 +55,7 @@ class Candidate:
     note_en: str = ""
     cadrage: Optional[list] = None   # [x, y, zoom] du visage dans la photo, pour les portraits ronds
     noms: Optional[list] = None      # façons de le nommer dans un tweet (réseau « qui nomme qui ») ; défaut : nom et patronyme
+    photo: str = ""                 # fichier Wikimedia Commons imposé, quand l'image de la page Wikipédia ne convient pas
 
     @property
     def slug(self) -> str:
@@ -87,6 +88,7 @@ def load_candidates(path: Path = CANDIDATES_FILE, only_enabled: bool = True) -> 
             note_en=item.get("note_en", ""),
             cadrage=item.get("cadrage"),
             noms=item.get("noms"),
+            photo=item.get("photo", ""),
         )
         if only_enabled and not cand.enabled:
             continue

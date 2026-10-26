@@ -65,7 +65,8 @@ candidates:
     party: Renaissance (dissident)
     bloc: centre
     handle: becht_olivier
-    cadrage: [0.5, 0.26, 2.1]
+    photo: Olivier_Becht_2023_(cropped).jpg   # l'image de sa page Wikipédia a été supprimée de Commons
+    cadrage: [0.53, 0.32, 1.35]
     status: declare
   - name: Nicolas Dupont-Aignan
     party: Debout la France

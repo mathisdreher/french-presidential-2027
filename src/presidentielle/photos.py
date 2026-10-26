@@ -51,7 +51,9 @@ def resolve(candidates: list[config.Candidate], session: requests.Session | None
     files = {}
     for title, cand in titles.items():
         page = pages.get(redirect.get(title, title)) or pages.get(redirect.get(redirect.get(title, title), ""))
-        if page and page.get("pageimage"):
+        if cand.photo:  # fichier imposé dans candidates.yaml (image de la page supprimée ou inadaptée)
+            files[cand.slug] = (cand.photo, (page or {}).get("fullurl"))
+        elif page and page.get("pageimage"):
             files[cand.slug] = (page["pageimage"], page.get("fullurl"))
         else:
             log.warning("Pas d'image Wikipédia pour %s (page « %s »)", cand.name, title)
