@@ -191,7 +191,7 @@ FRAMEWORKS = {
         "controversy: “punitive ecology”, “ecological planning”, “sobriety”. Tracking who launches a formula, who "
         "picks it up, diverts or contests it, means following a battle to impose the words of the debate.",
         "Computed without any model: each formula in config/formules.yaml is detected through its variants in the "
-        "tweets, with its first use and how it spreads. Formulas are quoted in French, the language of the debate.",
+        "tweets, and which camps it travels across. Formulas are quoted in French, the language of the debate.",
     ),
     "boussole": (
         "The ecology compass", "Built for this site, after John Dryzek",

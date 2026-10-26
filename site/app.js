@@ -475,14 +475,23 @@ function renderEngagement(box, tweets) {
   const LIM = 2; // de ×1/4 à ×4
   const pos = (v) => 50 + (clamp(Math.log2(Math.max(v, 1e-3)), -LIM, LIM) / LIM) * 46;
   const stTip = (st) => st.map((s) => ({ value: s.n >= ENG_STANCE_MIN ? times(s.v) : "–", label: `${optLabel("position", s.k)} · ${t("eng_tt_count", { n: num(s.n) })}`, key: s.color, keyShape: "swatch" }));
-  // Ligne à un seul point, coloré par position, avec son étiquette
-  const single = (s) => {
-    const track = el("div", { class: "log-track", "aria-label": t("eng_aria", { name: optLabel("position", s.k), v: times(s.v) }) },
-      el("span", { class: `log-dot ${s.cls}`, style: `left:${pos(s.v)}%` }),
-      el("span", { class: "seg-label", style: s.v >= 1 ? `left:${pos(s.v) + 2}%` : `right:${100 - pos(s.v) + 2}%`, text: times(s.v) }));
-    hoverable(track, () => ({ title: optLabel("position", s.k), rows: [{ value: times(s.v), label: t("eng_tt_median") }, { value: num(s.n), label: t("eng_tt_n") }],
-      note: s.n < MIN_N ? t("fragile_eco", { n: MIN_N }) : null }));
-    return el("div", { class: "bar-row" }, el("div", { class: "bar-name" }, el("span", { class: `swatch ${s.cls}`, style: `background:${s.color}` }), optLabel("position", s.k)), track);
+  // Barres divergentes depuis ×1, sur une échelle ajustée aux valeurs pour que les écarts se voient
+  const divBars = (items, unitLabel) => {
+    const lim = Math.max(0.5, Math.ceil(Math.max(...items.map((it) => Math.abs(Math.log2(it.v)))) * 1.3 * 4) / 4);
+    const bx = (v) => 50 + (clamp(Math.log2(v), -lim, lim) / lim) * 44;
+    const rowsEl = items.map((it) => {
+      const x = bx(it.v), up = it.v >= 1;
+      const track = el("div", { class: "dbar-track", "aria-label": t("eng_aria", { name: it.title, v: times(it.v) }) },
+        el("span", { class: "dbar", style: `left:${Math.min(50, x)}%;width:${Math.max(0.6, Math.abs(x - 50))}%;background:${it.color}` }),
+        el("span", { class: "dbar-val", style: up ? `left:${x + 1.2}%` : `right:${100 - x + 1.2}%`, text: times(it.v) }));
+      hoverable(track, () => ({ title: it.title, rows: [{ value: times(it.v), label: t("eng_tt_median") }, { value: num(it.n), label: unitLabel }],
+        note: it.n < MIN_N ? t("fragile_eco", { n: MIN_N }) : null }));
+      return el("div", { class: "bar-row dbar-row" }, el("div", { class: "bar-name" }, it.key ? el("span", { class: "swatch", style: `background:${it.color}` }) : null,
+        el("span", { class: "nm", text: it.title }), el("small", { text: `n=${num(it.n)}` })), track);
+    });
+    const r = (v) => times(2 ** v);
+    return [el("div", { class: "bars" }, rowsEl), el("div", { class: "div-axis" }, el("span"), el("div", { class: "div-axis-inner" },
+      el("span", { text: `← ${r(-lim)}` }), el("span", { text: "×1" }), el("span", { text: `${r(lim)} →` })))];
   };
   // Ligne à trois points (une position chacun) et un trait pour l'ensemble
   const multi = (nameNode, title, r, extra = {}) => {
@@ -502,7 +511,8 @@ function renderEngagement(box, tweets) {
   // 1. Selon la position, tous candidats confondus
   const overall = engStats(eco);
   const stances = overall.st.filter((s) => s.n >= ENG_STANCE_MIN);
-  box.append(el("h3", { class: "block-sub first", text: t("eng_by_stance") }), el("div", { class: "bars" }, stances.map(single)), axis());
+  box.append(el("h3", { class: "block-sub first", text: t("eng_by_stance") }),
+    ...divBars(stances.map((st) => ({ key: st.k, title: t({ critique_ecologie: "th_critical", neutre: "th_neutral", favorable_transition: "th_favorable" }[st.k]), v: st.v, n: st.n, color: st.color })), t("eng_tt_n")));
 
   // 2. Par candidat
   const cand = [...new Set(eco.map((tw) => tw.c))].map((k) => ({ key: k, ...engStats(eco.filter((tw) => tw.c === k)) })).filter((r) => r.n >= 3).sort((a, b) => b.v - a.v);
@@ -518,13 +528,8 @@ function renderEngagement(box, tweets) {
   // 4. Selon le registre émotionnel
   const reg = V("registre").options.map((o) => ({ key: o.key, list: eco.filter((tw) => tw.registre === o.key).map(relEng) })).filter((r) => r.list.length >= 3)
     .map((r) => ({ key: r.key, n: r.list.length, v: median(r.list) }));
-  if (reg.length) box.append(el("h3", { class: "block-sub", text: t("eng_by_register") }), el("div", { class: "bars" }, reg.map((r) => {
-    const track = el("div", { class: "log-track", "aria-label": t("eng_aria", { name: optLabel("registre", r.key), v: times(r.v) }) },
-      el("span", { class: "log-dot plain", style: `left:${pos(r.v)}%` }),
-      el("span", { class: "seg-label", style: r.v >= 1 ? `left:${pos(r.v) + 2}%` : `right:${100 - pos(r.v) + 2}%`, text: times(r.v) }));
-    hoverable(track, () => ({ title: optLabel("registre", r.key), rows: [{ value: times(r.v), label: t("eng_tt_median") }, { value: num(r.n), label: t("eng_tt_n") }] }));
-    return el("div", { class: "bar-row" }, el("div", { class: "bar-name", text: optLabel("registre", r.key) }), track);
-  })), axis());
+  if (reg.length) box.append(el("h3", { class: "block-sub", text: t("eng_by_register") }),
+    ...divBars(reg.map((r) => ({ title: optLabel("registre", r.key), v: r.v, n: r.n, color: "var(--ink-2)" })), t("eng_tt_n")));
   box.append(el("p", { class: "note-small", text: t("eng_note", { n: ENG_MIN }) }));
 
   const cell = (s) => (s.n >= ENG_STANCE_MIN ? `${times(s.v)} (${num(s.n)})` : "–");
@@ -1759,13 +1764,15 @@ function renderMots(panel) {
   const gloss = (f) => (LANG === "en" && f.en ? el("span", { class: "gloss", text: f.en }) : null);
   if (!used.length) { fBox.append(el("p", { class: "empty", text: t("formulas_empty") })); setTable("formules", [], []); }
   else {
-    const table = el("table", { class: "wrap-cells" }, el("thead", {}, el("tr", {}, [t("th_formula"), t("th_uses"), t("th_first"), t("th_users"), t("th_assoc")].map((h, i) => el("th", { class: i === 1 ? "num" : null, text: h })))),
+    // familles politiques qui emploient chaque formule : une formule partagée circule d'un camp à l'autre
+    const famUse = (f) => { const m = new Map(); for (const [k, n] of Object.entries(f.par_candidat)) { const b = (S.cand.get(k) || {}).bloc || ""; m.set(b, (m.get(b) || 0) + n); } return [...m].sort((a, b) => b[1] - a[1]); };
+    const table = el("table", { class: "wrap-cells" }, el("thead", {}, el("tr", {}, [t("th_formula"), t("th_uses"), t("th_families"), t("th_users"), t("th_assoc")].map((h, i) => el("th", { class: i === 1 ? "num" : null, text: h })))),
       el("tbody", {}, used.map((f) => {
-        const c = S.cand.get(f.premiere.c);
-        const top = Object.entries(f.par_candidat).slice(0, 3);
+        const top = Object.entries(f.par_candidat).sort((a, b) => b[1] - a[1]).slice(0, 3);
+        const fams = famUse(f);
         return el("tr", {}, el("td", {}, f.label, gloss(f)), el("td", { class: "num", text: num(f.total) }),
-          el("td", {}, el("span", { class: "who-inline" }, avatar(f.premiere.c, 20), `${candName(f.premiere.c)}, ${fmtDay(f.premiere.date)}`), " ",
-            c && c.handle ? el("a", { href: `https://x.com/${c.handle}/status/${f.premiere.id}`, target: "_blank", rel: "noopener", text: t("see") }) : null),
+          el("td", {}, el("div", { class: "fam-chips" }, fams.map(([b, n]) => el("span", { class: "fam-chip", style: `--fam:${BLOC_COLOR[b] || "#8a8a84"}` }, blocLabel(b), el("small", { text: num(n) })))),
+            el("small", { class: "fam-count", text: tn("n_families", fams.length) })),
           el("td", {}, top.map(([k, n]) => el("div", { class: "who-row" }, avatar(k, 20), t("kv", { k: candName(k), v: num(n) })))),
           el("td", { text: (f.mots_associes || []).slice(0, 6).map((m) => m[0]).join(", ") }));
       })));

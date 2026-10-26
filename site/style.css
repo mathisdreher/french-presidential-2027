@@ -223,6 +223,11 @@ main:focus { outline: none; }
 .avatar { position: relative; display: inline-grid; place-items: center; flex: none; overflow: hidden; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--border); color: var(--ink-2); font-weight: 650; }
 .avatar img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 18%; display: block; }
 .who-inline { display: inline-flex; align-items: center; gap: 6px; }
+.fam-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.fam-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: 999px; font-size: 12px; white-space: nowrap;
+  background: color-mix(in srgb, var(--fam) 16%, transparent); border: 1px solid color-mix(in srgb, var(--fam) 45%, transparent); }
+.fam-chip small { color: var(--muted); font-variant-numeric: tabular-nums; }
+.fam-count { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
 .who-row { display: flex; align-items: center; gap: 6px; margin: 2px 0; white-space: nowrap; }
 .table-view { margin-top: 14px; overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
@@ -302,6 +307,13 @@ details.fold summary { cursor: pointer; font-weight: 600; }
 .log-track.dimmed .log-dot { opacity: .35; }
 .log-dot { position: absolute; top: 7px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--surface); z-index: 1; }
 .log-dot.down { background: var(--accent-2); }
+.dbar-track { position: relative; height: 34px; border-radius: 6px; }
+.dbar-track:hover, .dbar-track:focus-visible { background: var(--wash); }
+.dbar-track::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1.5px; margin-left: -.75px; background: var(--ink-2); opacity: .55; }
+.dbar { position: absolute; top: 6px; height: 22px; border-radius: 4px; }
+.dbar-val { position: absolute; top: 7px; font-size: 15px; font-weight: 700; color: var(--ink); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dbar-row .bar-name { font-weight: 600; flex-wrap: wrap; column-gap: 8px; row-gap: 0; }
+.dbar-row .bar-name .swatch { flex-shrink: 0; }
 .log-dot.plain { background: var(--ink-2); }
 .log-dot.cri { background: var(--accent-2); }
 .log-dot.fav { background: var(--accent); }

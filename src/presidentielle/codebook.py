@@ -197,7 +197,7 @@ FRAMEWORKS: tuple[Framework, ...] = (
         "« sobriété ». Suivre qui lance une formule, qui la reprend, la détourne ou la conteste, "
         "c'est suivre une bataille pour imposer les mots du débat.",
         "Calculé sans modèle : chaque formule de config/formules.yaml est repérée par ses variantes "
-        "dans les tweets, avec sa première occurrence et sa diffusion.",
+        "dans les tweets, et les camps entre lesquels elle circule.",
         (Ref("Krieg-Planque, A. (2009). La notion de « formule » en analyse du discours. Cadre théorique et méthodologique. Besançon : Presses universitaires de Franche-Comté."),),
     ),
     Framework(
