@@ -319,10 +319,10 @@ details.fold summary { cursor: pointer; font-weight: 600; }
 .log-dot.fav { background: var(--accent); }
 .log-dot.neu { background: var(--neutral-mark); box-shadow: inset 0 0 0 1.5px var(--muted), 0 0 0 2px var(--surface); }
 .log-dot.sm { top: 8px; width: 12px; height: 12px; margin-left: -6px; }
-.log-tick { position: absolute; top: 4px; height: 20px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--ink-2); }
+.log-tick { position: absolute; top: 8px; width: 11px; height: 11px; margin-left: -5.5px; transform: rotate(45deg); border-radius: 2px; background: var(--surface); border: 2px solid var(--ink); box-sizing: border-box; z-index: 0; }
 .log-track.dimmed .log-tick { opacity: .35; }
 .dot-key { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
-.tick-key { width: 2px; height: 13px; border-radius: 1px; display: inline-block; background: var(--ink-2); }
+.tick-key { width: 10px; height: 10px; margin: 0 1px; transform: rotate(45deg); border-radius: 2px; display: inline-block; background: var(--surface); border: 2px solid var(--ink); box-sizing: border-box; }
 .block-sub.first { margin-top: 2px; }
 .ev-name { flex-direction: column; align-items: flex-start; gap: 0; font-size: 13px; line-height: 1.25; }
 .ev-date { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
